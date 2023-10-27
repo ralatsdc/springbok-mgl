@@ -72,6 +72,7 @@ pub fn create_refiner_map(refiner_map: &mut IndexMap<String, IndexMap<String, En
             debug!("\nLabel text: {:?}", label_text);
 
             let entry_text: Vec<&str> = label_text.split(' ').collect();
+            // TODO: Make this value unique for all refiners
             debug!("Entry: {:}", entry_text[0]);
 
             let input_element = label_element.select(&input_selector).next().unwrap();
