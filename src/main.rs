@@ -1,5 +1,4 @@
 use clap::Parser;
-use indexmap::IndexMap;
 use log::info;
 use url::Url;
 
@@ -11,8 +10,7 @@ fn main() {
     // Get default search page, parse, and create refiner map
 
     info!("Creating refiner map");
-    let mut refiner_map = IndexMap::new();
-    create_refiner_map(&mut refiner_map);
+    let refiner_map = create_refiner_map();
 
     // Parsing command line arguments and construct search URL
 
