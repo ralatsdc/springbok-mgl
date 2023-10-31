@@ -1,7 +1,7 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::debug;
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
 // See:
@@ -46,49 +46,97 @@ pub struct Cli {
     pub document_type: Option<String>,
 }
 
-pub fn create_refiner_map(refiner_map: &mut IndexMap<String, IndexMap<String, Entry>>) {
+pub fn create_refiner_map() -> IndexMap<String, IndexMap<String, Entry>> {
+    // Use an IndexMap to preserve order
+    let mut refiner_map = IndexMap::new();
+
+    // Get the page from which to parse refiners
     let body = reqwest::blocking::get("https://malegislature.gov/Bills/Search?SearchTerms=&Page=1")
         .unwrap()
         .text()
         .unwrap();
     let document = Html::parse_document(body.as_str());
 
-    let refiner_selector = Selector::parse("div#refiners fieldset").unwrap();
-    // Note that removing the "top" class will collect all hidden groups, some of which will be duplicates
-    let group_selector = Selector::parse("div.refinerGroup.top").unwrap();
+    // Define all selectors required to find the refiners
+    let refiner_selector = Selector::parse("div#refiners").unwrap();
+    let group_selector = Selector::parse("fieldset").unwrap();
+    let title_selector = Selector::parse("h4.modal-title").unwrap();
     let legend_selector = Selector::parse("legend").unwrap();
+    let body_selector = Selector::parse("div.modal-body").unwrap();
     let label_selector = Selector::parse("label").unwrap();
     let input_selector = Selector::parse("input").unwrap();
-    for refiner_element in document.select(&refiner_selector) {
-        let legend_element = refiner_element.select(&legend_selector).next().unwrap();
-        let legend_text = legend_element.text().collect::<Vec<_>>()[0].trim();
-        debug!("\nLegend text: {:?}", legend_text);
 
+    // Find the div#refiners element which contains all refiner groups, then consider each group
+    let refiner_element = document.select(&refiner_selector).next().unwrap();
+    for group_element in refiner_element.select(&group_selector) {
+        // Use an IndexMap to preserve order
         let mut group_map = IndexMap::new();
 
-        let group_element = refiner_element.select(&group_selector).next().unwrap();
-        for label_element in group_element.select(&label_selector) {
-            let label_text = label_element.text().collect::<Vec<_>>()[1].trim();
-            debug!("\nLabel text: {:?}", label_text);
+        // Find the title in the h4.modal-title element ...
+        let group_label_element: ElementRef = match group_element.select(&title_selector).next() {
+            None => {
+                // ... but if it isn't there, find it in the fieldset element
+                group_element.select(&legend_selector).next().unwrap()
+            }
+            Some(element) => element,
+        };
+        let group_label = String::from(group_label_element.text().collect::<Vec<_>>()[0].trim());
+        debug!("\nLegend text: {:?}", group_label);
 
-            let entry_text: Vec<&str> = label_text.split(' ').collect();
-            // TODO: Make this value unique for all refiners
-            debug!("Entry: {:}", entry_text[0]);
+        // Find the div.modal-body element ...
+        let group_column_element = match group_element.select(&body_selector).next() {
+            None => {
+                // ... but if it isn't there, clone the fieldset element, then consider each row label element
+                group_element.clone()
+            }
+            Some(element) => element,
+        };
+        for row_label_element in group_column_element.select(&label_selector) {
+            // Assign label for this entry
+            let entry_label = row_label_element.text().collect::<Vec<_>>()[1]
+                .trim()
+                .replace("  ", " ");
+            debug!("Label text: {:?}", entry_label);
 
-            let input_element = label_element.select(&input_selector).next().unwrap();
+            // Create a unique key from the label
+            let mut entry_key: String =
+                String::from(entry_label.split(' ').collect::<Vec<&str>>()[0])
+                    .trim_end_matches(",")
+                    .parse()
+                    .unwrap();
+            if !(group_label.contains("Court")
+                || group_label.contains("Branch")
+                || group_label.contains("Legislator"))
+            {
+                let words = entry_label.split(" ").collect::<Vec<&str>>();
+                entry_key = words[..words.len() - 1]
+                    .join("-")
+                    .replace("/", "-")
+                    .replace("(", "")
+                    .replace(")", "")
+                    .replace("'", "")
+                    .replace(",", "")
+                    .replace(".", "");
+            }
+            debug!("Entry: {:?}", entry_key);
+
+            // Find the token for this entry
+            let input_element = row_label_element.select(&input_selector).next().unwrap();
             let entry_token = input_element.value().attr("data-refinertoken").unwrap();
             debug!("Entry token: {}", entry_token);
 
+            // Collect each group entry key, label, and token
             group_map.insert(
-                String::from(entry_text[0]),
+                String::from(entry_key),
                 Entry {
-                    label_text: String::from(label_text),
+                    label_text: String::from(entry_label),
                     entry_token: String::from(entry_token),
                 },
             );
         }
-        refiner_map.insert(String::from(legend_text), group_map);
+        refiner_map.insert(String::from(group_label), group_map);
     }
+    refiner_map
 }
 
 pub struct Entry {
