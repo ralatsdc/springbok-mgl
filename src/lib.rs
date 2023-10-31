@@ -144,7 +144,7 @@ pub fn create_refiner_map() -> IndexMap<String, IndexMap<String, RefinerEntry>> 
     refiner_map
 }
 
-pub fn list_entries_or_append_query_pair(
+pub fn print_entries_or_append_query_pair(
     argument: &Option<String>,
     refiner_group_map: &IndexMap<String, RefinerEntry>,
     refiner_field: &mut String,
@@ -152,11 +152,13 @@ pub fn list_entries_or_append_query_pair(
 ) {
     match argument {
         Some(refiner_key) if refiner_key == &String::from("MISSING") => {
+            // Refiner key is missing, so list all possible keys
             for (refiner_key, refiner_entry) in refiner_group_map.iter() {
                 println!(r#"Use "{}" for "{}""#, refiner_key, refiner_entry.refiner_label);
             }
         }
         Some(refiner_key) => {
+            // Refiner key is not missing, so append the query pair
             search_url
                 .query_pairs_mut()
                 .append_pair(refiner_field, refiner_group_map.get(refiner_key).unwrap().refiner_token.as_str());
@@ -165,12 +167,13 @@ pub fn list_entries_or_append_query_pair(
     }
 }
 
-
 pub fn get_cell_data(table_row_element: &ElementRef, cell: i32) -> (String, Url) {
+    // Most cell elements contains a hyperlink element ...
     let base_url = Url::parse("https://malegislature.gov").unwrap();
     let mut cell_selector = Selector::parse(format!("td:nth-child({cell}) a").as_str()).unwrap();
     match table_row_element.select(&cell_selector).next() {
         None => {
+            // ... but if not, use the cell element, otherwise ...
             cell_selector = Selector::parse(format!("td:nth-child({cell})").as_str()).unwrap();
             let cell_element = table_row_element.select(&cell_selector).next().unwrap();
             (
@@ -179,6 +182,7 @@ pub fn get_cell_data(table_row_element: &ElementRef, cell: i32) -> (String, Url)
             )
         }
         Some(cell_element) => (
+            // ... use the hyperlink element
             String::from(cell_element.text().collect::<Vec<_>>()[0].trim()),
             base_url
                 .join(cell_element.value().attr("href").unwrap())
@@ -186,12 +190,14 @@ pub fn get_cell_data(table_row_element: &ElementRef, cell: i32) -> (String, Url)
         ),
     }
 }
+
 pub struct SearchEntry {
     pub bill_url: Url,
     pub bill_sponsor: String,
     pub bill_summary: String,
 }
-pub fn get_search_results(url: Url) -> IndexMap<String, SearchEntry> {
+
+pub fn get_and_print_search_results(url: Url) -> IndexMap<String, SearchEntry> {
     let mut search_results_map = IndexMap::new();
 
     let body = reqwest::blocking::get(url).unwrap().text().unwrap();
@@ -201,11 +207,12 @@ pub fn get_search_results(url: Url) -> IndexMap<String, SearchEntry> {
     let table_row_selector = Selector::parse("tr").unwrap();
 
     let table_body_element = document.select(&table_body_selector).next().unwrap();
+    println!("Bill — Link — Sponsor — Summary");
     for table_row_element in table_body_element.select(&table_row_selector) {
         let (bill_number, bill_url) = get_cell_data(&table_row_element, 2);
         let (bill_sponsor, _) = get_cell_data(&table_row_element, 3);
         let (bill_summary, _) = get_cell_data(&table_row_element, 4);
-        println!("{number} {url} {legislator} {summary}");
+        println!("{bill_number} — {bill_url} — {bill_sponsor} — {bill_summary}");
 
         search_results_map.insert(bill_number, SearchEntry{
             bill_url,
