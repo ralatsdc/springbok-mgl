@@ -2,7 +2,7 @@ use clap::Parser;
 use log::info;
 use url::Url;
 
-use springbok_mgl::{create_refiner_map, list_entries_or_append_query_pair, Cli};
+use springbok_mgl::{create_refiner_map, list_entries_or_append_query_pair, Cli, get_search_results};
 
 fn main() {
     env_logger::init();
@@ -76,4 +76,6 @@ fn main() {
         &mut search_url,
     );
     info!("Value for search URL: {search_url}");
+
+    get_search_results(search_url);
 }
