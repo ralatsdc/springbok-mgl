@@ -17,34 +17,47 @@ use url::Url;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
+    /// List legislation for the current general court
+    #[arg(short = 'l', long)]
+    pub list: bool,
+
     /// Search for legislation using this search term
     #[arg(short = 's', long)]
     pub search_term: Option<String>,
 
     /// Identify legislation from this legislative session
-    #[arg(short = 'c', long, default_value = "193rd", num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'C', long, default_value = "193rd", num_args = 0..=1, default_missing_value = "MISSING")]
     pub general_court: Option<String>,
 
     /// Include legislation in this branch of the legislature
-    #[arg(short = 'b', long, num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'B', long, num_args = 0..=1, default_missing_value = "MISSING")]
     pub branch: Option<String>,
 
     /// Include legislation sponsored by this legislator
-    #[arg(short = 'l', long, num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'L', long, num_args = 0..=1, default_missing_value = "MISSING")]
     pub sponsor_legislator: Option<String>,
 
     /// Include legislation sponsored by this legislative committee
-    #[arg(short = 'm', long, num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'M', long, num_args = 0..=1, default_missing_value = "MISSING")]
     pub sponsor_committee: Option<String>,
 
     /// Include legislation sponsored by a governor, or state organization
-    #[arg(short = 'o', long, num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'O', long, num_args = 0..=1, default_missing_value = "MISSING")]
     pub sponsor_other: Option<String>,
 
     /// Identify legislation of this document type
-    #[arg(short = 'd', long, num_args = 0..=1, default_missing_value = "MISSING")]
+    #[arg(short = 'D', long, num_args = 0..=1, default_missing_value = "MISSING")]
     pub document_type: Option<String>,
+
+    /// Download the text of a bill when searching with the bill number
+    #[arg(short = 'd', long)]
+    pub download: bool,
+
+    /// Download text into this filename
+    #[arg(short = 'o', long)]
+    pub output_filename: Option<String>,
 }
+
 pub struct RefinerEntry {
     pub refiner_label: String,
     pub refiner_token: String,
@@ -61,7 +74,7 @@ pub fn create_refiner_map() -> IndexMap<String, IndexMap<String, RefinerEntry>> 
         .unwrap();
     let document = Html::parse_document(body.as_str());
 
-    // Define all selectors required to find the refiners
+    // Define all selectors required to select the refiners
     let refiner_selector = Selector::parse("div#refiners").unwrap();
     let group_selector = Selector::parse("fieldset").unwrap();
     let title_selector = Selector::parse("h4.modal-title").unwrap();
@@ -130,7 +143,7 @@ pub fn create_refiner_map() -> IndexMap<String, IndexMap<String, RefinerEntry>> 
             let refiner_token = input_element.value().attr("data-refinertoken").unwrap();
             debug!("Refiner token: {}", refiner_token);
 
-            // Collect each group entry key, label, and token
+            // Collect each refiner group entry key, label, and token
             refiner_group_map.insert(
                 String::from(refiner_key),
                 RefinerEntry {
@@ -145,26 +158,42 @@ pub fn create_refiner_map() -> IndexMap<String, IndexMap<String, RefinerEntry>> 
 }
 
 pub fn print_entries_or_append_query_pair(
-    argument: &Option<String>,
+    argument: Option<&str>,
     refiner_group_map: &IndexMap<String, RefinerEntry>,
     refiner_field: &mut String,
     search_url: &mut Url,
-) {
+) -> Option<bool> {
     match argument {
         Some(refiner_key) if refiner_key == &String::from("MISSING") => {
             // Refiner key is missing, so list all possible keys
             for (refiner_key, refiner_entry) in refiner_group_map.iter() {
-                println!(r#"Use "{}" for "{}""#, refiner_key, refiner_entry.refiner_label);
+                println!(
+                    r#"Use "{}" for "{}""#,
+                    refiner_key, refiner_entry.refiner_label
+                );
             }
+            None
         }
         Some(refiner_key) => {
             // Refiner key is not missing, so append the query pair
-            search_url
-                .query_pairs_mut()
-                .append_pair(refiner_field, refiner_group_map.get(refiner_key).unwrap().refiner_token.as_str());
+            search_url.query_pairs_mut().append_pair(
+                refiner_field,
+                refiner_group_map
+                    .get(refiner_key)
+                    .unwrap()
+                    .refiner_token
+                    .as_str(),
+            );
+            Some(true)
         }
-        None => (),
+        None => None
     }
+}
+
+pub struct SearchEntry {
+    pub bill_url: Url,
+    pub bill_sponsor: String,
+    pub bill_summary: String,
 }
 
 pub fn get_cell_data(table_row_element: &ElementRef, cell: i32) -> (String, Url) {
@@ -191,34 +220,63 @@ pub fn get_cell_data(table_row_element: &ElementRef, cell: i32) -> (String, Url)
     }
 }
 
-pub struct SearchEntry {
-    pub bill_url: Url,
-    pub bill_sponsor: String,
-    pub bill_summary: String,
-}
-
-pub fn get_and_print_search_results(url: Url) -> IndexMap<String, SearchEntry> {
+pub fn get_and_print_search_results(url: &Url) -> IndexMap<String, SearchEntry> {
+    // Use an IndexMap to preserve order
     let mut search_results_map = IndexMap::new();
 
-    let body = reqwest::blocking::get(url).unwrap().text().unwrap();
+    // Get the search result page, select the table, and parse each result row
+    let body = reqwest::blocking::get(url.clone()).unwrap().text().unwrap();
     let document = Html::parse_document(body.as_str());
-
     let table_body_selector = Selector::parse("tbody").unwrap();
     let table_row_selector = Selector::parse("tr").unwrap();
-
     let table_body_element = document.select(&table_body_selector).next().unwrap();
     println!("Bill — Link — Sponsor — Summary");
+    // TODO: Handle paging
     for table_row_element in table_body_element.select(&table_row_selector) {
         let (bill_number, bill_url) = get_cell_data(&table_row_element, 2);
         let (bill_sponsor, _) = get_cell_data(&table_row_element, 3);
         let (bill_summary, _) = get_cell_data(&table_row_element, 4);
         println!("{bill_number} — {bill_url} — {bill_sponsor} — {bill_summary}");
 
-        search_results_map.insert(bill_number, SearchEntry{
-            bill_url,
-            bill_sponsor,
-            bill_summary,
-        });
+        // Collect each search result bill number, url, sponsor, and summary
+        search_results_map.insert(
+            bill_number,
+            SearchEntry {
+                bill_url,
+                bill_sponsor,
+                bill_summary,
+            },
+        );
     }
     search_results_map
+}
+
+pub fn download_bill_text(bill_url: &Url) {
+    // Get the bill summary page
+    let bill_body = reqwest::blocking::get(bill_url.clone())
+        .unwrap()
+        .text()
+        .unwrap();
+    let bill_document = Html::parse_document(bill_body.as_str());
+
+    // Select the bill text page
+    let text_url_selector = Selector::parse("div.modalBtnGroup a:nth-child(1)").unwrap();
+    let text_url_element = bill_document.select(&text_url_selector).next().unwrap();
+    let text_url = Url::parse("https://malegislature.gov")
+        .unwrap()
+        .join(text_url_element.value().attr("href").unwrap());
+
+    // Get the bill text page
+    let text_body = reqwest::blocking::get(text_url.unwrap().clone())
+        .unwrap()
+        .text()
+        .unwrap();
+    let text_document = Html::parse_document(text_body.as_str());
+
+    // Select, and print each paragraph of the bill text
+    let text_selector = Selector::parse("div.modal-body div").unwrap();
+    let text_element = text_document.select(&text_selector).next().unwrap();
+    for node in text_element.text().collect::<Vec<_>>() {
+        println!("{node}");
+    }
 }
