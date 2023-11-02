@@ -162,8 +162,7 @@ pub fn print_entries_or_append_query_pair(
     refiner_group_map: &IndexMap<String, RefinerEntry>,
     refiner_field: &mut String,
     search_url: &mut Url,
-    do_search: bool,
-) -> bool {
+) -> Option<bool> {
     match argument {
         Some(refiner_key) if refiner_key == &String::from("MISSING") => {
             // Refiner key is missing, so list all possible keys
@@ -173,7 +172,7 @@ pub fn print_entries_or_append_query_pair(
                     refiner_key, refiner_entry.refiner_label
                 );
             }
-            do_search
+            None
         }
         Some(refiner_key) => {
             // Refiner key is not missing, so append the query pair
@@ -185,9 +184,9 @@ pub fn print_entries_or_append_query_pair(
                     .refiner_token
                     .as_str(),
             );
-            true
+            Some(true)
         }
-        None => do_search,
+        None => None
     }
 }
 
