@@ -254,7 +254,7 @@ pub fn get_and_print_search_results(url: &Url) -> IndexMap<String, SearchEntry> 
     search_results_map
 }
 
-pub fn get_and_print_bill_text_nodes(bill_url: &Url, output_option: Option<String>) {
+pub fn get_and_print_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     // Get the bill summary page
     let bill_body = reqwest::blocking::get(bill_url.clone())
         .unwrap()
@@ -279,24 +279,25 @@ pub fn get_and_print_bill_text_nodes(bill_url: &Url, output_option: Option<Strin
     // Select, and print each paragraph of the bill text
     let text_selector = Selector::parse("div.modal-body div").unwrap();
     let text_element = text_document.select(&text_selector).next().unwrap();
-    let text_nodes = text_element.text().collect::<Vec<_>>();
-    for text_node in &text_nodes {
+    let mut text_nodes: Vec<String> = Vec::new();
+    for text_node in text_element.text().collect::<Vec<_>>() {
         println!("{text_node}");
+        text_nodes.push(text_node.to_string());
     }
-
-    // Print each paragraph of the bill text to a file, if specified
-    if let Some(output_filename) = output_option {
-        let path = Path::new(output_filename.as_str());
-        let display = path.display();
-        let mut file = match File::create(&path) {
-            Err(why) => panic!("Couldn't create {}: {}", display, why),
-            Ok(file) => file,
-        };
-        for text_node in text_nodes {
-            match file.write(format!("{text_node}\n").as_bytes()) {
-                Err(why) => panic!("Couldn't write to {}: {}", display, why),
-                Ok(_) => (),
-            }
+    text_nodes
+}
+pub fn write_bill_text_nodes(text_nodes: Vec<String>, output_filename: String) {
+    // Print each paragraph of the bill text to a file
+    let path = Path::new(output_filename.as_str());
+    let display = path.display();
+    let mut file = match File::create(&path) {
+        Err(why) => panic!("Couldn't create {}: {}", display, why),
+        Ok(file) => file,
+    };
+    for text_node in text_nodes {
+        match file.write(format!("{text_node}\n").as_bytes()) {
+            Err(why) => panic!("Couldn't write to {}: {}", display, why),
+            Ok(_) => (),
         }
     }
 }
