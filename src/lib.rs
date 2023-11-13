@@ -281,12 +281,13 @@ pub fn get_and_print_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     let text_element = text_document.select(&text_selector).next().unwrap();
     let mut text_nodes: Vec<String> = Vec::new();
     for text_node in text_element.text().collect::<Vec<_>>() {
-        println!("{text_node}");
+        // TODO: Restore and make optional
+        // println!("{text_node}");
         text_nodes.push(text_node.to_string());
     }
     text_nodes
 }
-pub fn write_bill_text_nodes(text_nodes: Vec<String>, output_filename: String) {
+pub fn write_bill_text_nodes(text_nodes: &Vec<String>, output_filename: String) {
     // Print each paragraph of the bill text to a file
     let path = Path::new(output_filename.as_str());
     let display = path.display();
