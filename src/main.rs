@@ -3,10 +3,7 @@ use indexmap::IndexMap;
 use log::info;
 use url::Url;
 
-use springbok_mgl::{
-    create_refiner_map, download_bill_text, get_and_print_search_results,
-    print_entries_or_append_query_pair, Cli,
-};
+use springbok_mgl::{create_refiner_map, get_and_print_bill_text_nodes, get_and_print_search_results, print_entries_or_append_query_pair, Cli, write_bill_text_nodes};
 
 fn main() {
     env_logger::init();
@@ -109,12 +106,17 @@ fn main() {
         search_results_map = get_and_print_search_results(&search_url);
     }
 
-    // Download the bill text when searching with bill number
+    // Get, and print the bill text when searching with bill number
     if cli.download {
         if let Some(&ref search_entry) = search_results_map.get(search_term.as_str()).as_deref() {
             let bill_url = &search_entry.bill_url;
             info!("Value for bill URL: {bill_url}");
-            download_bill_text(bill_url);
+            let text_nodes = get_and_print_bill_text_nodes(bill_url);
+
+            // Write the bill text when to a file
+            if let Some(output_filename) = cli.output_filename {
+                write_bill_text_nodes(text_nodes, output_filename);
+            }
         } else {
             info!("Search term is not a bill number")
         }
