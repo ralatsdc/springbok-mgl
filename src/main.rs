@@ -117,6 +117,35 @@ fn main() {
             if let Some(output_filename) = cli.output_filename {
                 write_bill_text_nodes(&text_nodes, output_filename);
             }
+
+            // Count sections that amend and repeal existing law
+            let mut section_counts = init_section_counts();
+            let section_regex = init_section_regex();
+            let mut section_text = String::new();
+            for text_node in text_nodes {
+                count_sections(
+                    text_node,
+                    &mut section_counts,
+                    &section_regex,
+                    &mut section_text,
+                );
+            }
+            println!("Total sections: {}", section_counts.total);
+            println!("Amending sections: {}", section_counts.amending);
+            println!(
+                "Amending sections by striking and inserting: {}",
+                section_counts.amending_by_striking_and_inserting
+            );
+            println!(
+                "Amending sections by striking: {}",
+                section_counts.amending_by_striking
+            );
+            println!(
+                "Amending sections by inserting: {}",
+                section_counts.amending_by_inserting
+            );
+            println!("Repealing sections: {}", section_counts.repealing);
+            println!("Other sections: {}", section_counts.other);
         } else {
             info!("Search term is not a bill number")
         }

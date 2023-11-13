@@ -1290,6 +1290,7 @@ dependencies = [
  "env_logger",
  "indexmap 2.0.2",
  "log",
+ "regex",
  "reqwest",
  "scraper",
  "url",

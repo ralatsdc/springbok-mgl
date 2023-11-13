@@ -1,6 +1,7 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::debug;
+use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 use std::fs::File;
 use std::io::Write;
@@ -301,4 +302,87 @@ pub fn write_bill_text_nodes(text_nodes: &Vec<String>, output_filename: String) 
             Ok(_) => (),
         }
     }
+}
+
+pub struct SectionRegex {
+    section: Regex,
+    amended: Regex,
+    striking: Regex,
+    inserting: Regex,
+    repealed: Regex,
+}
+pub fn init_section_regex() -> SectionRegex {
+    SectionRegex {
+        section: Regex::new(r"SECTION").unwrap(),
+        amended: Regex::new(r"amended").unwrap(),
+        striking: Regex::new(r"striking").unwrap(),
+        inserting: Regex::new(r"inserting").unwrap(),
+        repealed: Regex::new(r"repealed").unwrap(),
+    }
+}
+
+pub struct SectionCounts {
+    pub total: i32,
+    pub amending: i32,
+    pub amending_by_striking: i32,
+    pub amending_by_inserting: i32,
+    pub amending_by_striking_and_inserting: i32,
+    pub repealing: i32,
+    pub other: i32,
+}
+
+pub fn init_section_counts() -> SectionCounts {
+    SectionCounts {
+        total: 0,
+        amending: 0,
+        amending_by_striking: 0,
+        amending_by_inserting: 0,
+        amending_by_striking_and_inserting: 0,
+        repealing: 0,
+        other: 0,
+    }
+}
+pub fn count_sections(
+    text_node: String,
+    section_counts: &mut SectionCounts,
+    section_regex: &SectionRegex,
+    section_text: &mut String,
+) {
+    let text_str = text_node.as_str();
+    if section_regex.section.is_match(text_str) {
+        // Text starts a section of the bill
+        section_counts.total += 1;
+        if !section_text.is_empty() {
+            // Section text has been accumulated
+            let section_str = section_text.as_str();
+            if section_regex.amended.is_match(section_str) {
+                // Section amends an existing law
+                section_counts.amending += 1;
+                let is_striking = section_regex.striking.is_match(section_str);
+                let is_inserting = section_regex.inserting.is_match(section_str);
+                if is_striking && is_inserting {
+                    // Section strikes out and inserts
+                    section_counts.amending_by_striking_and_inserting += 1;
+                } else if is_striking {
+                    // Section strikes out only
+                    section_counts.amending_by_striking += 1;
+                } else if is_inserting {
+                    // Section inserts only
+                    section_counts.amending_by_inserting += 1;
+                } else {
+                    println!("NOT striking or inserting: {section_text}");
+                }
+            } else if section_regex.repealed.is_match(section_text.as_str()) {
+                // Section repeals an existing law
+                section_counts.repealing += 1;
+            } else {
+                // Section establishes a new law
+                section_counts.other += 1;
+                println!("NOT amending or repealing: {section_text}");
+            }
+        }
+        section_text.clear();
+    }
+    // Text continues a section of the bill
+    section_text.push_str(text_str);
 }
