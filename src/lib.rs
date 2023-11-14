@@ -351,8 +351,8 @@ pub fn count_sections(
     let text_str = text_node.as_str();
     if section_regex.section.is_match(text_str) {
         // Text starts a section of the bill
-        section_counts.total += 1;
         if !section_text.is_empty() {
+            section_counts.total += 1;
             // Section text has been accumulated
             let section_str = section_text.as_str();
             if section_regex.amended.is_match(section_str) {
