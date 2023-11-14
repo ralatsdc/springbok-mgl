@@ -130,6 +130,13 @@ fn main() {
                     &mut section_text,
                 );
             }
+            // Count final SECTION
+            count_sections(
+                String::from("SECTION"),
+                &mut section_counts,
+                &section_regex,
+                &mut section_text,
+            );
             println!("Total sections: {}", section_counts.total);
             println!("Amending sections: {}", section_counts.amending);
             println!(
