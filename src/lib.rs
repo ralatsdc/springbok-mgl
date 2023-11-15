@@ -310,6 +310,9 @@ pub struct SectionRegex {
     striking: Regex,
     inserting: Regex,
     repealed: Regex,
+    section_list: Regex,
+    section_chapter: Regex,
+    chapter: Regex,
 }
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
@@ -318,6 +321,9 @@ pub fn init_section_regex() -> SectionRegex {
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
+        section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
+        section_chapter: Regex::new(r"SECTION\s*(\d*\w*).*?([sS]ection[s]?)\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)").unwrap(),
+        chapter: Regex::new(r"SECTION\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)").unwrap(),
     }
 }
 
@@ -353,11 +359,13 @@ pub fn count_sections(
         // Text starts a section of the bill
         if !section_text.is_empty() {
             section_counts.total += 1;
+            let mut do_download = false;
             // Section text has been accumulated
             let section_str = section_text.as_str();
             if section_regex.amended.is_match(section_str) {
                 // Section amends an existing law
                 section_counts.amending += 1;
+                do_download = true;
                 let is_striking = section_regex.striking.is_match(section_str);
                 let is_inserting = section_regex.inserting.is_match(section_str);
                 if is_striking && is_inserting {
@@ -375,10 +383,33 @@ pub fn count_sections(
             } else if section_regex.repealed.is_match(section_text.as_str()) {
                 // Section repeals an existing law
                 section_counts.repealing += 1;
+                do_download = true;
             } else {
                 // Section establishes a new law
                 section_counts.other += 1;
                 println!("NOT amending or repealing: {section_text}");
+            }
+            if do_download {
+                let mut bill_section = String::from("");
+                let mut law_section = String::from("");
+                let mut law_chapter = String::from("");
+                if let Some(caps) = section_regex.section_chapter.captures(section_str) {
+                    bill_section = String::from(&caps[1]);
+
+                    if &caps[2] == "sections" || &caps[2] == "Sections" {
+                        let sections: Vec<_> = section_regex.section_list.find_iter(&caps[0]).map(|m| m.as_str()).collect();
+                        law_section = format!("{:?}", sections);
+                    } else {
+                        law_section = String::from(&caps[3]);
+                    }
+                    law_chapter = String::from(&caps[4]);
+
+                } else if let Some(caps) = section_regex.chapter.captures(section_str) {
+                    bill_section = String::from(&caps[1]);
+                    law_chapter = String::from(&caps[2]);
+
+                }
+                println!("{bill_section}, {law_section}, {law_chapter}")
             }
         }
         section_text.clear();
@@ -386,3 +417,5 @@ pub fn count_sections(
     // Text continues a section of the bill
     section_text.push_str(text_str);
 }
+
+
