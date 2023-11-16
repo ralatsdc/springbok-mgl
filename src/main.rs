@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use log::info;
 use url::Url;
 
-use springbok_mgl::{create_refiner_map, get_and_print_bill_text_nodes, get_and_print_search_results, print_entries_or_append_query_pair, Cli, write_bill_text_nodes};
+use springbok_mgl::*;
 
 fn main() {
     env_logger::init();
@@ -106,7 +106,7 @@ fn main() {
         search_results_map = get_and_print_search_results(&search_url);
     }
 
-    // Get, and print the bill text when searching with bill number
+    // Get, and print the bill text when searching by bill number
     if cli.download {
         if let Some(&ref search_entry) = search_results_map.get(search_term.as_str()).as_deref() {
             let bill_url = &search_entry.bill_url;
@@ -115,8 +115,44 @@ fn main() {
 
             // Write the bill text when to a file
             if let Some(output_filename) = cli.output_filename {
-                write_bill_text_nodes(text_nodes, output_filename);
+                write_bill_text_nodes(&text_nodes, output_filename);
             }
+
+            // Count sections that amend and repeal existing law
+            let mut section_counts = init_section_counts();
+            let section_regex = init_section_regex();
+            let mut section_text = String::new();
+            for text_node in text_nodes {
+                count_sections(
+                    text_node,
+                    &mut section_counts,
+                    &section_regex,
+                    &mut section_text,
+                );
+            }
+            // Count final SECTION
+            count_sections(
+                String::from("SECTION"),
+                &mut section_counts,
+                &section_regex,
+                &mut section_text,
+            );
+            println!("Total sections: {}", section_counts.total);
+            println!("Amending sections: {}", section_counts.amending);
+            println!(
+                "Amending sections by striking and inserting: {}",
+                section_counts.amending_by_striking_and_inserting
+            );
+            println!(
+                "Amending sections by striking: {}",
+                section_counts.amending_by_striking
+            );
+            println!(
+                "Amending sections by inserting: {}",
+                section_counts.amending_by_inserting
+            );
+            println!("Repealing sections: {}", section_counts.repealing);
+            println!("Other sections: {}", section_counts.other);
         } else {
             info!("Search term is not a bill number")
         }
