@@ -310,9 +310,10 @@ pub struct SectionRegex {
     striking: Regex,
     inserting: Regex,
     repealed: Regex,
+    section_or_chapter: Regex,
+    chapter: Regex,
     section_list: Regex,
     section_chapter: Regex,
-    chapter: Regex,
 }
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
@@ -321,9 +322,11 @@ pub fn init_section_regex() -> SectionRegex {
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
+        section_or_chapter: Regex::new(r"^(?i)SECTION(?-i)\s*(\d*\w*).*?(\s+[sS]ection[s]?|\s+[Cc]hapter)\s*(\d*\w*)").unwrap(),
+        chapter: Regex::new(r"^.*?[Cc]hapter\s*(\d*\w*)").unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
         section_chapter: Regex::new(r"SECTION\s*(\d*\w*).*?([sS]ection[s]?)\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)").unwrap(),
-        chapter: Regex::new(r"SECTION\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)").unwrap(),
+
     }
 }
 
@@ -393,22 +396,31 @@ pub fn count_sections(
                 let mut bill_section = String::from("");
                 let mut law_section = String::from("");
                 let mut law_chapter = String::from("");
-                if let Some(caps) = section_regex.section_chapter.captures(section_str) {
-                    bill_section = String::from(&caps[1]);
 
-                    if &caps[2] == "sections" || &caps[2] == "Sections" {
-                        let sections: Vec<_> = section_regex.section_list.find_iter(&caps[0]).map(|m| m.as_str()).collect();
-                        law_section = format!("{:?}", sections);
-                    } else {
+                if let Some(caps) = section_regex.section_or_chapter.captures(section_str){
+                    bill_section = String::from(&caps[1]);
+                    if caps[2].trim().to_lowercase().eq("section") {
                         law_section = String::from(&caps[3]);
+                        if let Some(caps) = section_regex.chapter.captures(section_str){
+                            law_chapter = String::from(&caps[1]);
+                        }
+
+                    } else if caps[2].trim().to_lowercase().eq("sections") {
+                        let sections: Vec<_> = section_regex.section_list.find_iter(section_str).map(|m| m.as_str()).collect();
+                        law_section = format!("{:?}", sections);
+                        if let Some(caps) = section_regex.chapter.captures(section_str){
+                            law_chapter = String::from(&caps[1]);
+                        }
+
+                    } else if caps[2].trim().to_lowercase().eq("chapter") {
+                        law_chapter = String::from(&caps[1])
+                    } else {
+                        // TODO: Write to file
                     }
-                    law_chapter = String::from(&caps[4]);
-
-                } else if let Some(caps) = section_regex.chapter.captures(section_str) {
-                    bill_section = String::from(&caps[1]);
-                    law_chapter = String::from(&caps[2]);
-
+                } else {
+                    // TODO: Write to file
                 }
+
                 println!("{bill_section}, {law_section}, {law_chapter}")
             }
         }
