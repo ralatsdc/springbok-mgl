@@ -2,7 +2,7 @@ use clap::Parser;
 use indexmap::IndexMap;
 use log::debug;
 use regex::Regex;
-use scraper::{ElementRef, Html, Selector};
+use scraper::{Element, ElementRef, Html, Selector};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -278,6 +278,7 @@ pub fn get_and_print_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     let text_document = Html::parse_document(text_body.as_str());
 
     // Select, and print each paragraph of the bill text
+    // TODO: Only select paragraphs?
     let text_selector = Selector::parse("div.modal-body div").unwrap();
     let text_element = text_document.select(&text_selector).next().unwrap();
     let mut text_nodes: Vec<String> = Vec::new();
@@ -288,6 +289,7 @@ pub fn get_and_print_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     }
     text_nodes
 }
+
 pub fn write_bill_text_nodes(text_nodes: &Vec<String>, output_filename: String) {
     // Print each paragraph of the bill text to a file
     let path = Path::new(output_filename.as_str());
@@ -315,6 +317,7 @@ pub struct SectionRegex {
     section_list: Regex,
     section_chapter: Regex,
 }
+
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
         section: Regex::new(r"SECTION").unwrap(),
@@ -322,11 +325,16 @@ pub fn init_section_regex() -> SectionRegex {
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
-        section_or_chapter: Regex::new(r"^(?i)SECTION(?-i)\s*(\d*\w*).*?(\s+[sS]ection[s]?|\s+[Cc]hapter)\s*(\d*\w*)").unwrap(),
+        section_or_chapter: Regex::new(
+            r"^(?i)SECTION(?-i)\s*(\d*\w*).*?(\s+[sS]ection[s]?|\s+[Cc]hapter)\s*(\d*\w*)",
+        )
+        .unwrap(),
         chapter: Regex::new(r"^.*?[Cc]hapter\s*(\d*\w*)").unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
-        section_chapter: Regex::new(r"SECTION\s*(\d*\w*).*?([sS]ection[s]?)\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)").unwrap(),
-
+        section_chapter: Regex::new(
+            r"SECTION\s*(\d*\w*).*?([sS]ection[s]?)\s*(\d*\w*).*?[cC]hapter\s*(\d*\w*)",
+        )
+        .unwrap(),
     }
 }
 
@@ -351,6 +359,32 @@ pub fn init_section_counts() -> SectionCounts {
         other: 0,
     }
 }
+
+pub fn go_to_law(section: &String, chapter: &String) -> Vec<String> {
+    let mut law_url = Url::parse("https://malegislature.gov/GeneralLaws/GoTo").unwrap();
+    law_url
+        .query_pairs_mut()
+        .append_pair("ChapterGoTo", chapter.as_str())
+        .append_pair("SectionGoTo", section.as_str());
+
+    let body = reqwest::blocking::get(law_url).unwrap().text().unwrap();
+    let document = Html::parse_document(body.as_str());
+
+    let h2_selector = Selector::parse("h2#skipTo").unwrap();
+    let h2_element = document.select(&h2_selector).next().unwrap();
+    let container_element = h2_element.parent_element().unwrap();
+
+    let paragraph_selector = Selector::parse("p").unwrap();
+    let paragraph_elements = container_element.select(&paragraph_selector);
+
+    let mut paragraph_text: Vec<String> = Vec::new();
+    for paragraph_element in paragraph_elements {
+        paragraph_text.push(paragraph_element.inner_html())
+    }
+    println!("{:?}", paragraph_text);
+    paragraph_text
+}
+
 pub fn count_sections(
     text_node: String,
     section_counts: &mut SectionCounts,
@@ -397,25 +431,28 @@ pub fn count_sections(
                 let mut law_section = String::from("");
                 let mut law_chapter = String::from("");
 
-                if let Some(caps) = section_regex.section_or_chapter.captures(section_str){
+                if let Some(caps) = section_regex.section_or_chapter.captures(section_str) {
                     bill_section = String::from(&caps[1]);
-                    if caps[2].trim().to_lowercase().eq("section") {
-                        law_section = String::from(&caps[3]);
-                        if let Some(caps) = section_regex.chapter.captures(section_str){
-                            law_chapter = String::from(&caps[1]);
-                        }
-
-                    } else if caps[2].trim().to_lowercase().eq("sections") {
-                        let sections: Vec<_> = section_regex.section_list.find_iter(section_str).map(|m| m.as_str()).collect();
-                        law_section = format!("{:?}", sections);
-                        if let Some(caps) = section_regex.chapter.captures(section_str){
-                            law_chapter = String::from(&caps[1]);
-                        }
-
-                    } else if caps[2].trim().to_lowercase().eq("chapter") {
+                    if caps[2].trim().to_lowercase().eq("chapter") {
                         law_chapter = String::from(&caps[1])
                     } else {
-                        // TODO: Write to file
+                        if let Some(caps) = section_regex.chapter.captures(section_str) {
+                            law_chapter = String::from(&caps[1]);
+                        }
+                        if caps[2].trim().to_lowercase().eq("section") {
+                            law_section = String::from(&caps[3]);
+
+                            go_to_law(&law_section, &law_chapter);
+                        } else if caps[2].trim().to_lowercase().eq("sections") {
+                            let sections: Vec<_> = section_regex
+                                .section_list
+                                .find_iter(section_str)
+                                .map(|m| m.as_str())
+                                .collect();
+                            law_section = format!("{:?}", sections);
+                        } else {
+                            // TODO: Write to file
+                        }
                     }
                 } else {
                     // TODO: Write to file
@@ -429,5 +466,3 @@ pub fn count_sections(
     // Text continues a section of the bill
     section_text.push_str(text_str);
 }
-
-
