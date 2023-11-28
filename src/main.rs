@@ -111,7 +111,7 @@ fn main() {
         if let Some(&ref search_entry) = search_results_map.get(search_term.as_str()).as_deref() {
             let bill_url = &search_entry.bill_url;
             info!("Value for bill URL: {bill_url}");
-            let text_nodes = get_and_print_bill_text_nodes(bill_url);
+            let text_nodes = get_bill_text_nodes(bill_url);
 
             // Write the bill text when to a file
             if let Some(output_filename) = cli.output_filename {
