@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc::Sender;
+use std::thread;
 use url::Url;
 
 // See:
@@ -515,37 +516,42 @@ pub struct LawSection {
 }
 
 pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<LawSection>) {
-    // Construct the law URL
-    let mut law_url = Url::parse("https://malegislature.gov/GeneralLaws/GoTo").unwrap();
-    law_url
-        .query_pairs_mut()
-        .append_pair("ChapterGoTo", law_chapter.as_str())
-        .append_pair("SectionGoTo", format_law_section(law_section).as_str());
-    info!("Value for law URL: {}", law_url);
+    // Clone input arguments and move into the spawned threads closure
+    let law_chapter = law_chapter.clone();
+    let law_section = law_section.clone();
+    thread::spawn(move || {
+        // Construct the law URL
+        let mut law_url = Url::parse("https://malegislature.gov/GeneralLaws/GoTo").unwrap();
+        law_url
+            .query_pairs_mut()
+            .append_pair("ChapterGoTo", law_chapter.as_str())
+            .append_pair("SectionGoTo", format_law_section(&law_section).as_str());
+        info!("Value for law URL: {}", law_url);
 
-    // Get and parse the law page
-    let body = reqwest::blocking::get(law_url).unwrap().text().unwrap();
-    let document = Html::parse_document(body.as_str());
+        // Get and parse the law page
+        let body = reqwest::blocking::get(law_url).unwrap().text().unwrap();
+        let document = Html::parse_document(body.as_str());
 
-    // Find the text node container
-    let h2_selector = Selector::parse("h2#skipTo").unwrap();
-    let h2_element = document.select(&h2_selector).next().unwrap();
-    let container_element = h2_element.parent_element().unwrap();
+        // Find the text node container
+        let h2_selector = Selector::parse("h2#skipTo").unwrap();
+        let h2_element = document.select(&h2_selector).next().unwrap();
+        let container_element = h2_element.parent_element().unwrap();
 
-    // Collect the law text nodes
-    let mut text_nodes: Vec<String> = Vec::new();
-    for text_node in container_element.text().collect::<Vec<_>>() {
-        text_nodes.push(text_node.to_string());
-    }
+        // Collect the law text nodes
+        let mut text_nodes: Vec<String> = Vec::new();
+        for text_node in container_element.text().collect::<Vec<_>>() {
+            text_nodes.push(text_node.to_string());
+        }
 
-    // Send out the law section
-    let law_location = LawLocation {
-        chapter: law_chapter.to_string(),
-        sections: vec![law_section.to_string()],
-    };
-    tx.send(LawSection {
-        law_location,
-        text_nodes,
-    })
-    .unwrap();
+        // Send out the law section
+        let law_location = LawLocation {
+            chapter: law_chapter.to_string(),
+            sections: vec![law_section.to_string()],
+        };
+        tx.send(LawSection {
+            law_location,
+            text_nodes,
+        })
+        .unwrap();
+    });
 }
