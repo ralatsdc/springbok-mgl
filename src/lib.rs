@@ -367,9 +367,9 @@ pub fn count_bill_sections(
     bill_locations: &mut IndexMap<String, LawLocation>,
 ) {
     let text_str = text_node.as_str();
-    let is_new_bill_section = section_regex.bill_section.is_match(text_str)
-        && (section_regex.amended.is_match(text_str) || section_regex.repealed.is_match(text_str));
-    if is_new_bill_section {
+    if section_regex.bill_section.is_match(text_str)
+        && (section_regex.amended.is_match(text_str) || section_regex.repealed.is_match(text_str))
+    {
         // Text starts a section of the bill
         if !section_text.is_empty() {
             // Previous section of bill collected
