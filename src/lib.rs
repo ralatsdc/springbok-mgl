@@ -516,7 +516,7 @@ pub struct LawSection {
 }
 
 pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<LawSection>) {
-    // Clone input arguments and move into the spawned threads closure
+    // Clone input arguments and move into the spawned thread closure
     let law_chapter = law_chapter.clone();
     let law_section = law_section.clone();
     thread::spawn(move || {
