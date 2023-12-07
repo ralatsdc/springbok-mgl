@@ -451,7 +451,7 @@ pub fn collect_law_and_bill_locations(
             // Found a single section
             law_sections.push(String::from((&caps[2]).trim_end()));
         } else if caps[1].trim().to_lowercase().eq("sections") {
-            // Found a multiple, comma delimited sections
+            // Found multiple, comma delimited sections
             let mut sections: Vec<_> = section_regex
                 .section_list
                 .find_iter(section_str)
