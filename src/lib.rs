@@ -3,10 +3,11 @@ use indexmap::IndexMap;
 use log::{debug, info};
 use regex::Regex;
 use scraper::{Element, ElementRef, Html, Selector};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::thread;
 use url::Url;
@@ -363,8 +364,7 @@ pub fn count_bill_sections(
     section_counts: &mut SectionCounts,
     section_regex: &SectionRegex,
     section_text: &mut String,
-    law_locations: &mut HashSet<LawLocation>,
-    bill_locations: &mut IndexMap<String, LawLocation>,
+    bill_tx: Sender<BillSection>,
 ) {
     let text_str = text_node.as_str();
     if section_regex.bill_section.is_match(text_str)
@@ -398,35 +398,32 @@ pub fn count_bill_sections(
                 section_counts.repealing += 1;
             }
             // Collect locations
-            collect_law_and_bill_locations(
-                section_regex,
-                section_str,
-                law_locations,
-                bill_locations,
-            );
+            collect_law_and_bill_locations(section_regex, section_str, bill_tx);
         }
         section_text.clear();
     }
     // Text continues a section of the bill
     section_text.push_str(text_str);
 }
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub struct LawLocation {
-    pub chapter: String,
-    pub sections: Vec<String>,
+
+#[derive(Debug)]
+pub struct BillSection {
+    pub section: String,
+    pub text: String,
+    pub law_sections: LawSections,
 }
 
-#[derive(Debug, Clone)]
-pub struct BillLocation {
-    pub section: String,
-    pub law_location: LawLocation,
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct LawSections {
+    pub chapter: String,
+    pub sections: Vec<String>,
+    pub text: HashMap<String, String>,
 }
 
 pub fn collect_law_and_bill_locations(
     section_regex: &SectionRegex,
     section_str: &str,
-    law_locations: &mut HashSet<LawLocation>,
-    bill_locations: &mut IndexMap<String, LawLocation>,
+    bill_tx: Sender<BillSection>,
 ) {
     // Capture bill section
     let mut bill_section = String::from("");
@@ -470,12 +467,35 @@ pub fn collect_law_and_bill_locations(
 
     // Collect law and bill locations
     if !law_chapter.is_empty() && !law_sections.is_empty() {
-        let law_location = LawLocation {
+        let mut law_text = HashMap::new();
+
+        // Get amended or repealed law sections concurrently
+        let (law_tx, law_rx) = mpsc::channel();
+
+        let law_section = law_sections.pop().unwrap();
+        for law_section in law_sections {
+            get_law_section(&law_chapter, &law_section, law_tx.clone());
+        }
+        get_law_section(&law_chapter, &law_section, law_tx);
+
+        for law_section_string in law_rx {
+            println!("Got law section: {:?}", law_section);
+            law_text.insert(law_section_string.0, law_section_string.1)
+        }
+
+        //TODO: populate text_nodes
+        let law_sections = LawSections {
             chapter: law_chapter,
             sections: law_sections,
+            text: law_text,
         };
-        law_locations.insert(law_location.clone());
-        bill_locations.insert(bill_section, law_location);
+
+        let bill_section = BillSection {
+            section: bill_section,
+            text: section_str.to_string(),
+            law_sections,
+        };
+        bill_tx.send(bill_section).unwrap();
     }
 }
 
@@ -509,13 +529,7 @@ pub fn format_law_section(law_section: &String) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LawSection {
-    pub law_location: LawLocation,
-    pub text_nodes: Vec<String>,
-}
-
-pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<LawSection>) {
+pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<(String, String)>) {
     // Clone input arguments and move into the spawned thread closure
     let law_chapter = law_chapter.clone();
     let law_section = law_section.clone();
@@ -538,20 +552,11 @@ pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<La
         let container_element = h2_element.parent_element().unwrap();
 
         // Collect the law text nodes
-        let mut text_nodes: Vec<String> = Vec::new();
+        let mut law_text = String::new();
         for text_node in container_element.text().collect::<Vec<_>>() {
-            text_nodes.push(text_node.to_string());
+            law_text.push_str(text_node);
         }
 
-        // Send out the law section
-        let law_location = LawLocation {
-            chapter: law_chapter.to_string(),
-            sections: vec![law_section.to_string()],
-        };
-        tx.send(LawSection {
-            law_location,
-            text_nodes,
-        })
-        .unwrap();
+        tx.send((law_section, law_text)).unwrap();
     });
 }
