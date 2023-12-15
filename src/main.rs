@@ -1,7 +1,7 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::info;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::mpsc;
 use url::Url;
 
@@ -120,79 +120,42 @@ fn main() {
                 write_text_nodes(&text_nodes, output_filename);
             }
 
-            // Count bill sections that amend and repeal existing law and collect corresponding law and bill locations
-            let mut section_counts = init_section_counts();
+            // Collect bill sections and law sections into structs with regex
             let section_regex = init_section_regex();
-            let mut section_text = String::new();
-            let mut bill_locations = IndexMap::new();
-            let mut law_locations = HashSet::new();
-            for text_node in text_nodes {
-                count_bill_sections(
-                    text_node,
-                    &mut section_counts,
-                    &section_regex,
-                    &mut section_text,
-                    &mut law_locations,
-                    &mut bill_locations,
-                );
-            }
-            // Count final SECTION
-            count_bill_sections(
-                String::from("SECTION"),
-                &mut section_counts,
-                &section_regex,
-                &mut section_text,
-                &mut law_locations,
-                &mut bill_locations,
-            );
-            println!("Total sections: {}", section_counts.total);
-            println!("Amending sections: {}", section_counts.amending);
-            println!(
-                "Amending sections by striking and inserting: {}",
-                section_counts.amending_by_striking_and_inserting
-            );
-            println!(
-                "Amending sections by striking: {}",
-                section_counts.amending_by_striking
-            );
-            println!(
-                "Amending sections by inserting: {}",
-                section_counts.amending_by_inserting
-            );
-            println!("Repealing sections: {}", section_counts.repealing);
-            println!("Other sections: {}", section_counts.other);
+            let bill = collect_bill_sections(text_nodes, &section_regex);
+            // Count type of bill sections with regex
+            let _section_counts = count_bill_section_types(&bill, &section_regex);
 
-            // Get amended or repealed law sections concurrently
+            // Iterate through bill to get list of all needed sections for downloading
+            let mut required_law_sections: Vec<(String, String)> = Vec::new();
+            for bill_section in &bill {
+                for section in &bill_section.law_sections.section_numbers {
+                    required_law_sections.push((
+                        bill_section.law_sections.chapter_number.clone(),
+                        section.to_string(),
+                    ))
+                }
+            }
+            // Remove duplicates
+            required_law_sections.sort();
+            required_law_sections.dedup();
+
+            // Download required law sections concurrently
             let (tx, rx) = mpsc::channel();
-
-            // Remove a law location from the collection to use last
-            let law_location = law_locations.iter().next().unwrap().clone();
-            assert!(
-                law_locations.remove(&law_location),
-                "Cannot remove law location"
-            );
-            for law_location in law_locations {
-                for law_location_section in law_location.sections {
-                    get_law_section(&law_location.chapter, &law_location_section, tx.clone());
-                }
+            let (chapter, section) = required_law_sections.pop().unwrap();
+            for (chapter, section) in required_law_sections {
+                download_law_section(&chapter, &section, tx.clone());
             }
+            // Download final law section
+            download_law_section(&chapter, &section, tx);
 
-            // Pop a vector of law location sections to use last
-            let mut law_location_sections = law_location.sections.clone();
-            let law_location_section = law_location_sections.pop().unwrap();
-            for law_location_section in law_location_sections {
-                get_law_section(&law_location.chapter, &law_location_section, tx.clone());
+            // Collect law sections
+            let mut law_sections_text: HashMap<String, String> = HashMap::new();
+            for (chapter, section, text) in rx {
+                println!("Got law section: {:?} of chapter {:?}", section, chapter);
+                law_sections_text.insert(get_section_key(&chapter, &section), text);
             }
-            get_law_section(&law_location.chapter, &law_location_section, tx);
-
-            // Collect law sections as they complete
-            let mut law_sections: Vec<LawSection> = Vec::new();
-            for law_section in rx {
-                if !law_section.text_nodes.is_empty() {
-                    println!("Got law section: {:?}", law_section);
-                    law_sections.push(law_section);
-                }
-            }
+            println!("law_sections_text: {:?}", law_sections_text);
         } else {
             info!("Search term is not a bill number")
         }
