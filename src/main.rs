@@ -142,24 +142,18 @@ fn main() {
 
             // Download required law sections concurrently
             let (tx, rx) = mpsc::channel();
-            let chapter_section = required_law_sections.pop().unwrap();
-            for chapter_section in required_law_sections {
-                download_law_section(&chapter_section.0, &chapter_section.1, tx.clone());
+            let (chapter, section) = required_law_sections.pop().unwrap();
+            for (chapter, section) in required_law_sections {
+                download_law_section(&chapter, &section, tx.clone());
             }
             // Download final law section
-            download_law_section(&chapter_section.0, &chapter_section.1, tx);
+            download_law_section(&chapter, &section, tx);
 
             // Collect law sections
             let mut law_sections_text: HashMap<String, String> = HashMap::new();
-            for law_section_string in rx {
-                println!(
-                    "Got law section: {:?} of chapter {:?}",
-                    law_section_string.0, law_section_string.1
-                );
-                law_sections_text.insert(
-                    get_section_key(&law_section_string.0, &law_section_string.1),
-                    law_section_string.2,
-                );
+            for (chapter, section, text) in rx {
+                println!("Got law section: {:?} of chapter {:?}", chapter, section);
+                law_sections_text.insert(get_section_key(&chapter, &section), text);
             }
             println!("law_sections_text: {:?}", law_sections_text);
         } else {
