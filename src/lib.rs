@@ -325,13 +325,13 @@ pub struct SectionRegex {
 // TODO: Document these?
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
-        bill_section: Regex::new(r"^(?i)section(?-i)\s*(\d*)\s*\.").unwrap(),
+        bill_section: Regex::new(r"^\s*(?i)section(?-i)\s*(\d*)\s*\.").unwrap(),
         amended: Regex::new(r"amended").unwrap(),
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
-        law_chapter: Regex::new(r"^(?i)section(?-i).*?[cC]hapter\s*(\d*\w*)").unwrap(),
-        law_section: Regex::new(r"^(?i)section(?-i).*?([sS]ection[s]?)\s*(\d*\w*)").unwrap(),
+        law_chapter: Regex::new(r"^\s*(?i)section(?-i).*?[cC]hapter\s*(\d*\w*)").unwrap(),
+        law_section: Regex::new(r"^\s*(?i)section(?-i).*?([sS]ection[s]?)\s*(\d*\w*)").unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
     }
 }
@@ -347,7 +347,7 @@ pub struct SectionCounts {
     pub other: i32,
 }
 
-pub fn init_section_counts() -> SectionCounts {
+fn _init_section_counts() -> SectionCounts {
     SectionCounts {
         total: 0,
         amending: 0,
@@ -359,88 +359,112 @@ pub fn init_section_counts() -> SectionCounts {
     }
 }
 
-pub fn count_bill_sections(
-    text_node: String,
-    section_counts: &mut SectionCounts,
+pub fn collect_bill_sections(
+    text_nodes: Vec<String>,
     section_regex: &SectionRegex,
-    section_text: &mut String,
-    bill_tx: Sender<BillSection>,
-) {
-    let text_str = text_node.as_str();
-    if section_regex.bill_section.is_match(text_str)
-        && (section_regex.amended.is_match(text_str) || section_regex.repealed.is_match(text_str))
-    {
-        // Text starts a section of the bill
-        if !section_text.is_empty() {
-            // Previous section of bill collected
-            // Increment counts
-            section_counts.total += 1;
-            let section_str = section_text.as_str();
-            if section_regex.amended.is_match(section_str) {
-                // Section amends an existing law
-                section_counts.amending += 1;
-                let is_striking = section_regex.striking.is_match(section_str);
-                let is_inserting = section_regex.inserting.is_match(section_str);
-                if is_striking && is_inserting {
-                    // Section strikes out and inserts
-                    section_counts.amending_by_striking_and_inserting += 1;
-                } else if is_striking {
-                    // Section strikes out only
-                    section_counts.amending_by_striking += 1;
-                } else if is_inserting {
-                    // Section inserts only
-                    section_counts.amending_by_inserting += 1;
-                } else {
-                    println!("NOT striking or inserting: {section_text}");
-                }
-            } else {
-                // Section repeals an existing law
-                section_counts.repealing += 1;
+) -> Vec<BillSection> {
+    let mut bill = Vec::new();
+    let mut section_text = String::new();
+
+    for text_node in text_nodes {
+        let text_str = text_node.as_str();
+        if section_regex.bill_section.is_match(text_str) {
+            // Indicates section_text is a complete section of bill
+            if !section_text.is_empty() {
+                // Collect bill section
+                _collect_bill_section(&section_text, section_regex, &mut bill);
             }
-            // Collect locations
-            collect_law_and_bill_locations(section_regex, section_str, bill_tx);
+            section_text.clear();
         }
-        section_text.clear();
+        section_text.push_str(text_str);
     }
-    // Text continues a section of the bill
-    section_text.push_str(text_str);
+    // Collect final bill section
+    _collect_bill_section(&section_text, section_regex, &mut bill);
+    bill
+}
+
+fn _collect_bill_section(
+    section_text: &String,
+    section_regex: &SectionRegex,
+    mut bill: &mut Vec<BillSection>,
+) {
+    let section_str = section_text.as_str();
+    let mut section_number = String::from("");
+    if let Some(caps) = section_regex.bill_section.captures(section_str) {
+        section_number = String::from(&caps[1]);
+    } else {
+        println!("{section_str}");
+    }
+    let law_sections = _collect_law_locations(&section_number, section_regex, section_str);
+    let bill_section = BillSection {
+        section_number,
+        text: section_text.to_string(),
+        law_sections,
+    };
+    bill.push(bill_section)
+}
+
+pub fn count_bill_section_types(
+    bill: &Vec<BillSection>,
+    section_regex: &SectionRegex,
+) -> SectionCounts {
+    let mut section_counts = _init_section_counts();
+    section_counts.total = bill.len() as i32;
+    for bill_section in bill {
+        println!("Bill Section: {:?}", bill_section);
+        if section_regex.amended.is_match(&*bill_section.text) {
+            // Section amends an existing law
+            section_counts.amending += 1;
+            let is_striking = section_regex.striking.is_match(&*bill_section.text);
+            let is_inserting = section_regex.inserting.is_match(&*bill_section.text);
+            if is_striking && is_inserting {
+                // Section strikes out and inserts
+                section_counts.amending_by_striking_and_inserting += 1;
+            } else if is_striking {
+                // Section strikes out only
+                section_counts.amending_by_striking += 1;
+            } else if is_inserting {
+                // Section inserts only
+                section_counts.amending_by_inserting += 1;
+            } else {
+                println!("NOT striking or inserting: {}", &*bill_section.text);
+            }
+        } else {
+            // Section repeals an existing law
+            section_counts.repealing += 1;
+        }
+    }
+    section_counts
 }
 
 #[derive(Debug)]
 pub struct BillSection {
-    pub section: String,
+    pub section_number: String,
     pub text: String,
     pub law_sections: LawSections,
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LawSections {
-    pub chapter: String,
+    pub bill_section_number: String,
+    pub chapter_number: String,
     pub sections: Vec<String>,
     pub text: HashMap<String, String>,
 }
 
-pub fn collect_law_and_bill_locations(
+fn _collect_law_locations(
+    bill_section_number: &str,
     section_regex: &SectionRegex,
     section_str: &str,
-    bill_tx: Sender<BillSection>,
-) {
-    // Capture bill section
-    let mut bill_section = String::from("");
-    if let Some(caps) = section_regex.bill_section.captures(section_str) {
-        bill_section = String::from(&caps[1]);
-    } else {
-        println!("{section_str}");
-    }
-
+) -> LawSections {
     // Capture law chapter
     let mut law_chapter = String::from("");
     if let Some(caps) = section_regex.law_chapter.captures(section_str) {
         law_chapter = String::from(&caps[1]);
     } else {
+        //TODO: Handle this as error instead
         println!("{section_str}");
     }
-
     // Capture law sections
     let mut law_sections: Vec<String> = Vec::new();
     if let Some(caps) = section_regex.law_section.captures(section_str) {
@@ -458,44 +482,19 @@ pub fn collect_law_and_bill_locations(
                 .collect();
             law_sections.append(&mut sections);
         } else {
+            //TODO: Handle this as error instead
             println!("{section_str}");
         }
     } else {
+        //TODO: Handle this as error instead
         println!("{section_str}");
     }
-    println!("{}, {:?}, {}", bill_section, law_sections, law_chapter);
-
-    // Collect law and bill locations
-    if !law_chapter.is_empty() && !law_sections.is_empty() {
-        let mut law_text = HashMap::new();
-
-        // Get amended or repealed law sections concurrently
-        let (law_tx, law_rx) = mpsc::channel();
-
-        let law_section = law_sections.pop().unwrap();
-        for law_section in law_sections {
-            get_law_section(&law_chapter, &law_section, law_tx.clone());
-        }
-        get_law_section(&law_chapter, &law_section, law_tx);
-
-        for law_section_string in law_rx {
-            println!("Got law section: {:?}", law_section);
-            law_text.insert(law_section_string.0, law_section_string.1)
-        }
-
-        //TODO: populate text_nodes
-        let law_sections = LawSections {
-            chapter: law_chapter,
-            sections: law_sections,
-            text: law_text,
-        };
-
-        let bill_section = BillSection {
-            section: bill_section,
-            text: section_str.to_string(),
-            law_sections,
-        };
-        bill_tx.send(bill_section).unwrap();
+    println!("{:?}, {}", law_sections, law_chapter);
+    LawSections {
+        bill_section_number: bill_section_number.to_string(),
+        chapter_number: law_chapter,
+        sections: law_sections,
+        text: Default::default(),
     }
 }
 
@@ -529,7 +528,11 @@ pub fn format_law_section(law_section: &String) -> String {
     }
 }
 
-pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<(String, String)>) {
+pub fn get_law_section(
+    law_chapter: &String,
+    law_section: &String,
+    tx: Sender<(String, String, String)>,
+) {
     // Clone input arguments and move into the spawned thread closure
     let law_chapter = law_chapter.clone();
     let law_section = law_section.clone();
@@ -543,12 +546,18 @@ pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<(S
         info!("Value for law URL: {}", law_url);
 
         // Get and parse the law page
-        let body = reqwest::blocking::get(law_url).unwrap().text().unwrap();
+        let body = reqwest::blocking::get(law_url.clone())
+            .unwrap()
+            .text()
+            .unwrap();
         let document = Html::parse_document(body.as_str());
 
         // Find the text node container
         let h2_selector = Selector::parse("h2#skipTo").unwrap();
-        let h2_element = document.select(&h2_selector).next().unwrap();
+        let h2_element = match document.select(&h2_selector).next() {
+            Some(element) => element,
+            None => panic!("Cannot get element for URL {}", law_url),
+        };
         let container_element = h2_element.parent_element().unwrap();
 
         // Collect the law text nodes
@@ -557,6 +566,6 @@ pub fn get_law_section(law_chapter: &String, law_section: &String, tx: Sender<(S
             law_text.push_str(text_node);
         }
 
-        tx.send((law_section, law_text)).unwrap();
+        tx.send((law_chapter, law_section, law_text)).unwrap();
     });
 }

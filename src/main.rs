@@ -1,7 +1,7 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::info;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::mpsc;
 use url::Url;
 
@@ -121,36 +121,76 @@ fn main() {
             }
 
             // Count bill sections that amend and repeal existing law and collect corresponding law and bill locations
-            let mut section_counts = init_section_counts();
             let section_regex = init_section_regex();
-            let mut section_text = String::new();
-            let mut bill = Vec::new();
 
-            // Get amended or repealed law sections concurrently
-            let (bill_tx, bill_rx) = mpsc::channel();
+            let unpopulated_bill = collect_bill_sections(text_nodes, &section_regex);
 
-            for text_node in text_nodes {
-                count_bill_sections(
-                    text_node,
-                    &mut section_counts,
-                    &section_regex,
-                    &mut section_text,
-                    bill_tx.clone(),
+            let section_counts = count_bill_section_types(&unpopulated_bill, &section_regex);
+
+            // Iterate through unpopulated bill to get flat list of all needed sections
+            let mut flat_law_chapter_sections: Vec<(String, String)> = Vec::new();
+            for bill_section in &unpopulated_bill {
+                for section in &bill_section.law_sections.sections {
+                    flat_law_chapter_sections.push((
+                        bill_section.law_sections.chapter_number.clone(),
+                        section.to_string(),
+                    ))
+                }
+            }
+            // Remove duplicates
+            flat_law_chapter_sections.sort();
+            flat_law_chapter_sections.dedup();
+
+            // Get law sections concurrently
+            let (tx, rx) = mpsc::channel();
+            let chapter_section = flat_law_chapter_sections.pop().unwrap();
+            for chapter_section in flat_law_chapter_sections {
+                get_law_section(&chapter_section.0, &chapter_section.1, tx.clone());
+            }
+            // Get final law section
+            get_law_section(&chapter_section.0, &chapter_section.1, tx);
+
+            let mut law_chapter_sections_text: HashMap<String, String> = HashMap::new();
+            for law_section_string in rx {
+                println!(
+                    "Got law section: {:?} of chapter {:?}",
+                    law_section_string.0, law_section_string.1
+                );
+                law_chapter_sections_text.insert(
+                    String::from(law_section_string.0 + "-" + &*law_section_string.1),
+                    law_section_string.2,
                 );
             }
-            // Count final SECTION
-            count_bill_sections(
-                String::from("SECTION"),
-                &mut section_counts,
-                &section_regex,
-                &mut section_text,
-                bill_tx,
-            );
 
-            // Collect the bill sections
-            for bill_section in bill_rx {
-                println!("Got bill section: {:?}", bill_section);
-                bill.push(bill_section);
+            let mut populated_bill: Vec<BillSection> = Vec::new();
+            // Populate BillSection structs with LawSections HashMap
+            for bill_section in unpopulated_bill {
+                let mut text = HashMap::new();
+                for section in &bill_section.law_sections.sections {
+                    let query = bill_section.law_sections.chapter_number.clone()
+                        + &"-".to_string()
+                        + section;
+                    text.insert(
+                        section.clone(),
+                        match law_chapter_sections_text.get(&query) {
+                            Some(result) => result,
+                            None => "",
+                        }
+                        .to_string(),
+                    );
+                }
+                let populated_law_section = LawSections {
+                    bill_section_number: bill_section.law_sections.bill_section_number,
+                    chapter_number: bill_section.law_sections.chapter_number,
+                    sections: bill_section.law_sections.sections,
+                    text,
+                };
+                let populated_bill_section = BillSection {
+                    section_number: bill_section.section_number,
+                    text: bill_section.text,
+                    law_sections: populated_law_section,
+                };
+                populated_bill.push(populated_bill_section);
             }
 
             println!("Total sections: {}", section_counts.total);
