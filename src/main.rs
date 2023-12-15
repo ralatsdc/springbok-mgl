@@ -152,7 +152,7 @@ fn main() {
             // Collect law sections
             let mut law_sections_text: HashMap<String, String> = HashMap::new();
             for (chapter, section, text) in rx {
-                println!("Got law section: {:?} of chapter {:?}", chapter, section);
+                println!("Got law section: {:?} of chapter {:?}", section, chapter);
                 law_sections_text.insert(get_section_key(&chapter, &section), text);
             }
             println!("law_sections_text: {:?}", law_sections_text);
