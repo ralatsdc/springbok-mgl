@@ -3,11 +3,11 @@ use indexmap::IndexMap;
 use log::{debug, info};
 use regex::Regex;
 use scraper::{Element, ElementRef, Html, Selector};
-use std::collections::{HashMap, HashSet};
+
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::sync::mpsc;
+
 use std::sync::mpsc::Sender;
 use std::thread;
 use url::Url;
@@ -261,6 +261,10 @@ pub fn get_and_print_search_results(url: &Url) -> IndexMap<String, SearchEntry> 
     search_results_map
 }
 
+pub fn get_section_key(chapter: &String, section: &String) -> String {
+    String::from(chapter.to_string() + "-" + section)
+}
+
 pub fn get_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     // Get the bill summary page
     let bill_body = reqwest::blocking::get(bill_url.clone())
@@ -347,7 +351,7 @@ pub struct SectionCounts {
     pub other: i32,
 }
 
-fn _init_section_counts() -> SectionCounts {
+fn init_section_counts() -> SectionCounts {
     SectionCounts {
         total: 0,
         amending: 0,
@@ -372,21 +376,21 @@ pub fn collect_bill_sections(
             // Indicates section_text is a complete section of bill
             if !section_text.is_empty() {
                 // Collect bill section
-                _collect_bill_section(&section_text, section_regex, &mut bill);
+                collect_bill_section(&section_text, section_regex, &mut bill);
             }
             section_text.clear();
         }
         section_text.push_str(text_str);
     }
     // Collect final bill section
-    _collect_bill_section(&section_text, section_regex, &mut bill);
+    collect_bill_section(&section_text, section_regex, &mut bill);
     bill
 }
 
-fn _collect_bill_section(
+fn collect_bill_section(
     section_text: &String,
     section_regex: &SectionRegex,
-    mut bill: &mut Vec<BillSection>,
+    bill: &mut Vec<BillSection>,
 ) {
     let section_str = section_text.as_str();
     let mut section_number = String::from("");
@@ -395,7 +399,7 @@ fn _collect_bill_section(
     } else {
         println!("{section_str}");
     }
-    let law_sections = _collect_law_locations(&section_number, section_regex, section_str);
+    let law_sections = collect_law_sections(&section_number, section_regex, section_str);
     let bill_section = BillSection {
         section_number,
         text: section_text.to_string(),
@@ -408,7 +412,7 @@ pub fn count_bill_section_types(
     bill: &Vec<BillSection>,
     section_regex: &SectionRegex,
 ) -> SectionCounts {
-    let mut section_counts = _init_section_counts();
+    let mut section_counts = init_section_counts();
     section_counts.total = bill.len() as i32;
     for bill_section in bill {
         println!("Bill Section: {:?}", bill_section);
@@ -430,10 +434,31 @@ pub fn count_bill_section_types(
                 println!("NOT striking or inserting: {}", &*bill_section.text);
             }
         } else {
+            let is_repealing = section_regex.repealed.is_match(&*bill_section.text);
             // Section repeals an existing law
-            section_counts.repealing += 1;
+            if is_repealing {
+                section_counts.repealing += 1;
+            } else {
+                section_counts.other += 1;
+            }
         }
     }
+    println!("Total sections: {}", section_counts.total);
+    println!("Amending sections: {}", section_counts.amending);
+    println!(
+        "Amending sections by striking and inserting: {}",
+        section_counts.amending_by_striking_and_inserting
+    );
+    println!(
+        "Amending sections by striking: {}",
+        section_counts.amending_by_striking
+    );
+    println!(
+        "Amending sections by inserting: {}",
+        section_counts.amending_by_inserting
+    );
+    println!("Repealing sections: {}", section_counts.repealing);
+    println!("Other sections: {}", section_counts.other);
     section_counts
 }
 
@@ -446,14 +471,12 @@ pub struct BillSection {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LawSections {
-    pub bill_section_number: String,
     pub chapter_number: String,
-    pub sections: Vec<String>,
-    pub text: HashMap<String, String>,
+    pub section_numbers: Vec<String>,
 }
 
-fn _collect_law_locations(
-    bill_section_number: &str,
+fn collect_law_sections(
+    _bill_section_number: &str,
     section_regex: &SectionRegex,
     section_str: &str,
 ) -> LawSections {
@@ -491,10 +514,8 @@ fn _collect_law_locations(
     }
     println!("{:?}, {}", law_sections, law_chapter);
     LawSections {
-        bill_section_number: bill_section_number.to_string(),
         chapter_number: law_chapter,
-        sections: law_sections,
-        text: Default::default(),
+        section_numbers: law_sections,
     }
 }
 
@@ -528,7 +549,7 @@ pub fn format_law_section(law_section: &String) -> String {
     }
 }
 
-pub fn get_law_section(
+pub fn download_law_section(
     law_chapter: &String,
     law_section: &String,
     tx: Sender<(String, String, String)>,
