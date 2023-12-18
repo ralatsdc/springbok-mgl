@@ -329,7 +329,7 @@ pub struct SectionRegex {
 // TODO: Document these?
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
-        bill_section: Regex::new(r"^\s*(?i)section(?-i)\s*(\d*)\s*\.").unwrap(),
+        bill_section: Regex::new(r"^\s*SECTION\s*(\d*\w*)\s*\.").unwrap(),
         amended: Regex::new(r"amended").unwrap(),
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
@@ -415,7 +415,7 @@ pub fn count_bill_section_types(
     let mut section_counts = init_section_counts();
     section_counts.total = bill.len() as i32;
     for bill_section in bill {
-        println!("Bill Section: {:?}", bill_section);
+        // println!("Bill Section: {:?}", bill_section);
         if section_regex.amended.is_match(&*bill_section.text) {
             // Section amends an existing law
             section_counts.amending += 1;

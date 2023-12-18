@@ -7,16 +7,12 @@ use url::Url;
 
 use springbok_mgl::*;
 
-fn main() {
-    env_logger::init();
-
+fn get_search_page(cli: &Cli) -> (bool, Url, String) {
     // Get default search page, parse, and create refiner map
     info!("Creating refiner map");
     let refiner_map = create_refiner_map();
 
-    // Parse command line arguments and construct search URL
-    info!("Constructing search URL");
-    let cli = Cli::parse();
+    // Construct search URL
     let mut search_url = Url::parse("https://malegislature.gov/Bills/Search").unwrap();
 
     // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1
@@ -100,6 +96,49 @@ fn main() {
         None => do_search,
         Some(do_search) => do_search,
     };
+    (do_search, search_url, search_term)
+}
+
+fn get_required_law_sections(bill: &Vec<BillSection>) -> HashMap<String, String> {
+    // Iterate through bill to get list of all needed sections for downloading
+    let mut required_law_sections: Vec<(String, String)> = Vec::new();
+    for bill_section in bill {
+        for section in &bill_section.law_sections.section_numbers {
+            required_law_sections.push((
+                bill_section.law_sections.chapter_number.clone(),
+                section.to_string(),
+            ))
+        }
+    }
+    // Remove duplicates
+    required_law_sections.sort();
+    required_law_sections.dedup();
+
+    // Download required law sections concurrently
+    let (tx, rx) = mpsc::channel();
+    let (chapter, section) = required_law_sections.pop().unwrap();
+    for (chapter, section) in required_law_sections {
+        download_law_section(&chapter, &section, tx.clone());
+    }
+    // Download final law section
+    download_law_section(&chapter, &section, tx);
+
+    // Collect law sections
+    let mut law_sections_text: HashMap<String, String> = HashMap::new();
+    for (chapter, section, text) in rx {
+        println!("Got law section: {:?} of chapter {:?}", section, chapter);
+        law_sections_text.insert(get_section_key(&chapter, &section), text);
+    }
+    law_sections_text
+}
+
+fn main() {
+    env_logger::init();
+
+    // Parse command line arguments and construct search URL
+    info!("Constructing search URL");
+    let cli = Cli::parse();
+    let (do_search, search_url, search_term) = get_search_page(&cli);
 
     // Get and print the search results
     let mut search_results_map = IndexMap::new();
@@ -126,36 +165,7 @@ fn main() {
             // Count type of bill sections with regex
             let _section_counts = count_bill_section_types(&bill, &section_regex);
 
-            // Iterate through bill to get list of all needed sections for downloading
-            let mut required_law_sections: Vec<(String, String)> = Vec::new();
-            for bill_section in &bill {
-                for section in &bill_section.law_sections.section_numbers {
-                    required_law_sections.push((
-                        bill_section.law_sections.chapter_number.clone(),
-                        section.to_string(),
-                    ))
-                }
-            }
-            // Remove duplicates
-            required_law_sections.sort();
-            required_law_sections.dedup();
-
-            // Download required law sections concurrently
-            let (tx, rx) = mpsc::channel();
-            let (chapter, section) = required_law_sections.pop().unwrap();
-            for (chapter, section) in required_law_sections {
-                download_law_section(&chapter, &section, tx.clone());
-            }
-            // Download final law section
-            download_law_section(&chapter, &section, tx);
-
-            // Collect law sections
-            let mut law_sections_text: HashMap<String, String> = HashMap::new();
-            for (chapter, section, text) in rx {
-                println!("Got law section: {:?} of chapter {:?}", section, chapter);
-                law_sections_text.insert(get_section_key(&chapter, &section), text);
-            }
-            println!("law_sections_text: {:?}", law_sections_text);
+            let _law_sections_text = get_required_law_sections(&bill);
         } else {
             info!("Search term is not a bill number")
         }
