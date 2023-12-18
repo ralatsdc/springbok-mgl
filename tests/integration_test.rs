@@ -97,6 +97,23 @@ fn it_counts_h4072() {
     let section_counts = count_bill_section_types(&bill, &section_regex);
     assert_section_counts(section_counts, expected_section_counts);
 }
+#[test]
+fn it_counts_h4072_lower() {
+    let expected_section_counts = SectionCounts {
+        total: 3,
+        amending: 0,
+        amending_by_striking_and_inserting: 0,
+        amending_by_striking: 0,
+        amending_by_inserting: 0,
+        repealing: 0,
+        other: 3,
+    };
+    let text_nodes = nodes_from_file("./tests/test-data/H.4072.lower.txt");
+    let section_regex = init_section_regex();
+    let bill = collect_bill_sections(text_nodes, &section_regex);
+    let section_counts = count_bill_section_types(&bill, &section_regex);
+    assert_section_counts(section_counts, expected_section_counts);
+}
 
 #[test]
 fn it_counts_s2482() {
@@ -182,6 +199,24 @@ fn it_counts_h47() {
         other: 3,
     };
     let text_nodes = nodes_from_file("./tests/test-data/H.47.txt");
+    let section_regex = init_section_regex();
+    let bill = collect_bill_sections(text_nodes, &section_regex);
+    let section_counts = count_bill_section_types(&bill, &section_regex);
+    assert_section_counts(section_counts, expected_section_counts);
+}
+
+#[test]
+fn it_counts_h47_lower() {
+    let expected_section_counts = SectionCounts {
+        total: 4,
+        amending: 1,
+        amending_by_striking_and_inserting: 1,
+        amending_by_striking: 0,
+        amending_by_inserting: 0,
+        repealing: 0,
+        other: 3,
+    };
+    let text_nodes = nodes_from_file("./tests/test-data/H.47.lower.txt");
     let section_regex = init_section_regex();
     let bill = collect_bill_sections(text_nodes, &section_regex);
     let section_counts = count_bill_section_types(&bill, &section_regex);
