@@ -336,8 +336,12 @@ pub fn init_section_regex() -> SectionRegex {
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
-        law_chapter: Regex::new(r"^\s*(?i)section(?-i).*?[cC]hapter\s*(\d*\w*)").unwrap(),
-        law_section: Regex::new(r"^\s*(?i)section(?-i).*?([sS]ection[s]?)\s*(\d*\w*)").unwrap(),
+        law_chapter: Regex::new(r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?[cC]hapter\s*(\d*\w*)")
+            .unwrap(),
+        law_section: Regex::new(
+            r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?([sS]ection[s]*)\s*(\d*\w*)",
+        )
+        .unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
     }
 }
