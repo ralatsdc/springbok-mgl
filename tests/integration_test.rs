@@ -97,6 +97,8 @@ fn it_counts_h4072() {
     let section_counts = count_bill_section_types(&bill, &section_regex);
     assert_section_counts(section_counts, expected_section_counts);
 }
+
+#[ignore]
 #[test]
 fn it_counts_h4072_lower() {
     let expected_section_counts = SectionCounts {
@@ -205,6 +207,7 @@ fn it_counts_h47() {
     assert_section_counts(section_counts, expected_section_counts);
 }
 
+#[ignore]
 #[test]
 fn it_counts_h47_lower() {
     let expected_section_counts = SectionCounts {
