@@ -3,10 +3,12 @@ use indexmap::IndexMap;
 use log::{debug, info};
 use regex::Regex;
 use scraper::{Element, ElementRef, Html, Selector};
+use std::collections::HashMap;
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::sync::mpsc;
 
 use std::sync::mpsc::Sender;
 use std::thread;
@@ -329,13 +331,17 @@ pub struct SectionRegex {
 // TODO: Document these?
 pub fn init_section_regex() -> SectionRegex {
     SectionRegex {
-        bill_section: Regex::new(r"^\s*(?i)section(?-i)\s*(\d*)\s*\.").unwrap(),
+        bill_section: Regex::new(r"^\s*SECTION\s*(\d*\w*)\s*\.").unwrap(),
         amended: Regex::new(r"amended").unwrap(),
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
-        law_chapter: Regex::new(r"^\s*(?i)section(?-i).*?[cC]hapter\s*(\d*\w*)").unwrap(),
-        law_section: Regex::new(r"^\s*(?i)section(?-i).*?([sS]ection[s]?)\s*(\d*\w*)").unwrap(),
+        law_chapter: Regex::new(r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?[cC]hapter\s*(\d*\w*)")
+            .unwrap(),
+        law_section: Regex::new(
+            r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?([sS]ection[s]*)\s*(\d*\w*)",
+        )
+        .unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
     }
 }
@@ -415,7 +421,7 @@ pub fn count_bill_section_types(
     let mut section_counts = init_section_counts();
     section_counts.total = bill.len() as i32;
     for bill_section in bill {
-        println!("Bill Section: {:?}", bill_section);
+        // println!("Bill Section: {:?}", bill_section);
         if section_regex.amended.is_match(&*bill_section.text) {
             // Section amends an existing law
             section_counts.amending += 1;
@@ -517,6 +523,130 @@ fn collect_law_sections(
         chapter_number: law_chapter,
         section_numbers: law_sections,
     }
+}
+pub fn get_search_page(cli: &Cli) -> (bool, Url, String) {
+    // Get default search page, parse, and create refiner map
+    info!("Creating refiner map");
+    let refiner_map = create_refiner_map();
+
+    // Construct search URL
+    let mut search_url = Url::parse("https://malegislature.gov/Bills/Search").unwrap();
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1
+    // https://malegislature.gov/Bills/Search?SearchTerms=mbta&Page=1
+    let mut do_search;
+    let search_term = match cli.search_term.as_deref() {
+        None => {
+            do_search = false;
+            String::from("")
+        }
+        Some(search_term) => {
+            do_search = true;
+            search_term.to_string()
+        }
+    };
+    search_url
+        .query_pairs_mut()
+        .append_pair("SearchTerms", search_term.as_str())
+        .append_pair("Page", "1");
+
+    // https://malegislature.gov/Bills/Search
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawsgeneralcourt%5D=3139326e64202832303231202d203230323229
+    print_entries_or_append_query_pair(
+        cli.general_court.as_deref(),
+        refiner_map.get("General Court").unwrap(),
+        &mut String::from("Refinements[lawsgeneralcourt]"),
+        &mut search_url,
+    );
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawsbranchname%5D=486f757365
+    do_search = match print_entries_or_append_query_pair(
+        cli.branch.as_deref(),
+        refiner_map.get("Branch").unwrap(),
+        &mut String::from("Refinements[lawsbranchname]"),
+        &mut search_url,
+    ) {
+        None => do_search,
+        Some(do_search) => do_search,
+    };
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawsuserprimarysponsorname%5D=4172636965726f2c204a616d6573
+    do_search = match print_entries_or_append_query_pair(
+        cli.sponsor_legislator.as_deref(),
+        refiner_map.get("Sponsor — Legislator").unwrap(),
+        &mut String::from("Refinements[lawsuserprimarysponsorname]"),
+        &mut search_url,
+    ) {
+        None => do_search,
+        Some(do_search) => do_search,
+    };
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawscommitteeprimarysponsorname%5D=3139326e64204a52756c6573
+    do_search = match print_entries_or_append_query_pair(
+        cli.sponsor_committee.as_deref(),
+        refiner_map.get("Sponsor — Committee").unwrap(),
+        &mut String::from("Refinements[lawscommitteeprimarysponsorname]"),
+        &mut search_url,
+    ) {
+        None => do_search,
+        Some(do_search) => do_search,
+    };
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawsotherprimarysponsorname%5D=41756469746f72206f662074686520436f6d6d6f6e7765616c7468
+    do_search = match print_entries_or_append_query_pair(
+        cli.sponsor_other.as_deref(),
+        refiner_map.get("Sponsor — Other").unwrap(),
+        &mut String::from("Refinements[lawsotherprimarysponsorname]"),
+        &mut search_url,
+    ) {
+        None => do_search,
+        Some(do_search) => do_search,
+    };
+
+    // https://malegislature.gov/Bills/Search?SearchTerms=&Page=1&Refinements%5Blawsfilingtype%5D=416d656e646d6%%6e74
+    do_search = match print_entries_or_append_query_pair(
+        cli.document_type.as_deref(),
+        refiner_map.get("Document Type").unwrap(),
+        &mut String::from("Refinements[lawsfilingtype]"),
+        &mut search_url,
+    ) {
+        None => do_search,
+        Some(do_search) => do_search,
+    };
+    (do_search, search_url, search_term)
+}
+
+pub fn get_required_law_sections(bill: &Vec<BillSection>) -> HashMap<String, String> {
+    // Iterate through bill to get list of all needed sections for downloading
+    let mut required_law_sections: Vec<(String, String)> = Vec::new();
+    for bill_section in bill {
+        for section in &bill_section.law_sections.section_numbers {
+            required_law_sections.push((
+                bill_section.law_sections.chapter_number.clone(),
+                section.to_string(),
+            ))
+        }
+    }
+    // Remove duplicates
+    required_law_sections.sort();
+    required_law_sections.dedup();
+
+    // Download required law sections concurrently
+    let (tx, rx) = mpsc::channel();
+    let (chapter, section) = required_law_sections.pop().unwrap();
+    for (chapter, section) in required_law_sections {
+        download_law_section(&chapter, &section, tx.clone());
+    }
+    // Download final law section
+    download_law_section(&chapter, &section, tx);
+
+    // Collect law sections
+    let mut law_sections_text: HashMap<String, String> = HashMap::new();
+    for (chapter, section, text) in rx {
+        println!("Got law section: {:?} of chapter {:?}", section, chapter);
+        law_sections_text.insert(get_section_key(&chapter, &section), text);
+    }
+    law_sections_text
 }
 
 pub fn format_law_section(law_section: &String) -> String {
