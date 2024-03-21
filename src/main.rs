@@ -37,7 +37,10 @@ fn main() {
             // Count type of bill sections with regex
             let _section_counts = count_bill_section_types(&bill, &section_regex);
 
-            let _law_sections_text = get_required_law_sections(&bill);
+            let law_sections_text = get_required_law_sections(&bill);
+            // Mark up documents
+            let markup_regex = init_markup_regex();
+            write_asciidocs(law_sections_text, &bill, &markup_regex);
         } else {
             info!("Search term is not a bill number")
         }

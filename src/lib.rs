@@ -1,11 +1,13 @@
 use clap::Parser;
 use indexmap::IndexMap;
-use log::{debug, info};
+use log::{debug, error, info};
 use regex::Regex;
 use scraper::{Element, ElementRef, Html, Selector};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use std::fs::File;
+use std::hash::Hash;
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc;
@@ -316,6 +318,170 @@ pub fn write_text_nodes(text_nodes: &Vec<String>, output_filename: String) {
     }
 }
 
+fn mark_text(
+    law_section_text: &String,
+    bill_section_text: &String,
+    markup_regex: &MarkupRegex,
+) -> String {
+    // Section amends an existing law
+    let is_repealing = markup_regex.repealed.is_match(&*bill_section_text);
+    let is_striking = markup_regex.striking.is_match(&*bill_section_text);
+    let is_inserting = markup_regex.inserting.is_match(&*bill_section_text);
+    let is_words = markup_regex.words.is_match(&*bill_section_text);
+    let is_sections = markup_regex.sections.is_match(&*bill_section_text);
+    let is_lines = markup_regex.lines.is_match(&*bill_section_text);
+    let mut marked_text = law_section_text.clone();
+
+    // Repealing
+    if is_repealing {
+        if let Some(caps) = markup_regex.repealed.captures(bill_section_text.as_ref()) {
+            let repeal_specifications = String::from(&caps[1]);
+
+            marked_text = format!(
+                "\
+            [.line-through .red]#{law_section_text}#\n\nREPEALED {repeal_specifications}
+            "
+            )
+        }
+    }
+    // Striking and Inserting
+    else if is_striking && is_inserting {
+        // Striking and inserting words
+        if is_words {
+            if let Some(caps) = markup_regex
+                .replace_words
+                .captures(bill_section_text.as_ref())
+            {
+                let striked_words = String::from(&caps[2]);
+                let inserted_words = String::from(&caps[4]);
+                // Format replacement
+                let replacement = format!(
+                    "\
+                    [.line-through .red]#{striked_words}# \
+                    [.blue]#{inserted_words}#\
+                    "
+                );
+
+                marked_text = law_section_text.replace(&striked_words, &*replacement)
+            }
+        }
+        // Striking and inserting line(s)
+        else if is_lines {
+            if let Some(caps) = markup_regex
+                .replace_lines
+                .captures(bill_section_text.as_ref())
+            {
+                let strike_start_line = String::from(&caps[1]);
+                let strike_end_line = String::from(&caps[2]);
+                let inserted_words = String::from(&caps[3]);
+
+                //TODO: figure out how to convert line numbers into actual strings
+                let striked_words = String::from("PLACEHOLDER");
+
+                // Format replacement
+                let replacement = format!(
+                    "\
+                [.line-through .red]#{striked_words}# \
+                [.blue]#{inserted_words}#\
+                "
+                );
+
+                marked_text = law_section_text.replace(&striked_words, &*replacement)
+            }
+        }
+        // Striking and inserting section(s)
+        else if is_sections {
+            if let Some(caps) = markup_regex
+                .replace_section
+                .captures(bill_section_text.as_ref())
+            {
+                let insert = String::from(caps[1].trim());
+                // Format replacement
+                marked_text = format!(
+                    "\
+                [.line-through .red]#{law_section_text}#\n\n[.blue]#{insert}#\
+                "
+                )
+            }
+        }
+    }
+    // Striking
+    else if is_striking {
+        // Striking words
+        if is_words {
+        }
+        // Striking line(s)
+        else if is_lines {
+        }
+        // Striking section(s)
+        else if is_sections {
+        }
+    }
+    // Inserting
+    else if is_inserting {
+        // Inserting words
+        if is_words {
+        }
+        // Inserting line(s)
+        else if is_lines {
+        }
+        // Inserting section(s)
+        else if is_sections {
+        }
+    } else {
+        println!("Not sure what section does: {}", &*law_section_text);
+    }
+    marked_text
+}
+fn mark_section_text(
+    law_section: &LawSectionWithText,
+    bill_section: &Vec<BillSection>,
+    markup_regex: &MarkupRegex,
+) -> Option<String> {
+    // Parse law section title and contents
+    if let Some(caps) = markup_regex.text_parse.captures(law_section.text.as_ref()) {
+        let title = String::from(caps[1].trim());
+        let law_section_text = String::from(caps[2].trim());
+
+        let mut marked_text = String::new();
+
+        // Apply markups for law_section across all applicable bill sections
+        for bill_section_key in &law_section.bill_section_keys {
+            if let Some(section) = bill_section
+                .iter()
+                .find(|bill_section| &bill_section.section_number == bill_section_key)
+            {
+                let bill_section_text = &section.text;
+
+                // need to sort out law section vs bill section
+                marked_text = mark_text(&law_section_text, bill_section_text, markup_regex);
+            }
+        }
+
+        let marked_section_text = format!("*{title}*\n\n{marked_text}");
+        return Some(marked_section_text);
+    }
+    None
+}
+
+pub fn write_asciidocs(
+    law_sections_text: Vec<LawSectionWithText>,
+    bill_sections_text: &Vec<BillSection>,
+    markup_regex: &MarkupRegex,
+) -> std::io::Result<()> {
+    for law_section in law_sections_text {
+        let file_name = &law_section.law_chapter_key;
+        if let Some(marked_text) = mark_section_text(&law_section, bill_sections_text, markup_regex)
+        {
+            let mut file = File::create(format!("{file_name}.adoc"))?;
+            file.write_all(marked_text.as_ref())?;
+        } else {
+            println!("Could not mark up law section: {file_name}")
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct SectionRegex {
     bill_section: Regex,
@@ -343,6 +509,49 @@ pub fn init_section_regex() -> SectionRegex {
         )
         .unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MarkupRegex {
+    text_parse: Regex,
+    striking: Regex,
+    inserting: Regex,
+    words: Regex,
+    sections: Regex,
+    lines: Regex,
+    repealed: Regex,
+    replace_words: Regex,
+    replace_lines: Regex,
+    replace_section: Regex,
+    strike_words: Regex,
+    strike_lines: Regex,
+    strike_section: Regex,
+    insert_words: Regex,
+    insert_lines: Regex,
+    insert_section: Regex,
+}
+
+// TODO: Document these?
+pub fn init_markup_regex() -> MarkupRegex {
+    MarkupRegex {
+        text_parse: Regex::new(r"((?i)section.*)[\n\s]*(.*)").unwrap(),
+        striking: Regex::new(r"striking").unwrap(),
+        inserting: Regex::new(r"inserting").unwrap(),
+        words: Regex::new(r"words").unwrap(),
+        sections: Regex::new(r"sections").unwrap(),
+        lines: Regex::new(r"lines").unwrap(),
+        repealed: Regex::new(r"repealed ?(.*)").unwrap(),
+        replace_words: Regex::new(r#"striking,?.*(“|")(.*)(”|").*inserting.*?:-? (.*)\."#).unwrap(),
+        replace_lines: Regex::new(r#"striking,?.*lines (\d*)[^\d]*(\d*).*inserting.*?:-?(.*)"#)
+            .unwrap(),
+        replace_section: Regex::new(r"striking,?.*section.*inserting.*?:-?(.*)").unwrap(),
+        strike_words: Regex::new(r"strike_words").unwrap(),
+        strike_lines: Regex::new(r"strike_lines").unwrap(),
+        strike_section: Regex::new(r"strike_section").unwrap(),
+        insert_words: Regex::new(r"insert_words").unwrap(),
+        insert_lines: Regex::new(r"insert_lines").unwrap(),
+        insert_section: Regex::new(r"insert_section").unwrap(),
     }
 }
 
@@ -494,6 +703,13 @@ fn collect_law_sections(
         //TODO: Handle this as error instead
         println!("{section_str}");
     }
+    // Exit if no chapter found
+    if law_chapter == "" {
+        return LawSections {
+            chapter_number: law_chapter,
+            section_numbers: Vec::new(),
+        };
+    }
     // Capture law sections
     let mut law_sections: Vec<String> = Vec::new();
     if let Some(caps) = section_regex.law_section.captures(section_str) {
@@ -616,15 +832,33 @@ pub fn get_search_page(cli: &Cli) -> (bool, Url, String) {
     (do_search, search_url, search_term)
 }
 
-pub fn get_required_law_sections(bill: &Vec<BillSection>) -> HashMap<String, String> {
+pub struct LawSectionWithText {
+    law_chapter_key: String,
+    text: String,
+    bill_section_keys: Vec<String>,
+}
+
+pub fn get_required_law_sections(bill: &Vec<BillSection>) -> Vec<LawSectionWithText> {
     // Iterate through bill to get list of all needed sections for downloading
     let mut required_law_sections: Vec<(String, String)> = Vec::new();
+    let mut law_section_bill_sections: HashMap<String, Vec<String>> = HashMap::new();
     for bill_section in bill {
         for section in &bill_section.law_sections.section_numbers {
-            required_law_sections.push((
-                bill_section.law_sections.chapter_number.clone(),
-                section.to_string(),
-            ))
+            let chapter = bill_section.law_sections.chapter_number.clone();
+            let section_key = get_section_key(&chapter, section);
+
+            match law_section_bill_sections.entry(section_key) {
+                Entry::Vacant(e) => {
+                    e.insert(vec![String::from(&bill_section.section_number)]);
+                }
+                Entry::Occupied(mut e) => {
+                    e.get_mut().push(String::from(&bill_section.section_number));
+                }
+            }
+
+            // Push required law section to list
+            // TODO: Review
+            required_law_sections.push((chapter, section.to_string()))
         }
     }
     // Remove duplicates
@@ -640,12 +874,33 @@ pub fn get_required_law_sections(bill: &Vec<BillSection>) -> HashMap<String, Str
     // Download final law section
     download_law_section(&chapter, &section, tx);
 
-    // Collect law sections
-    let mut law_sections_text: HashMap<String, String> = HashMap::new();
+    // Collect law sections and create struct
+    let mut law_sections_text: Vec<LawSectionWithText> = vec![];
     for (chapter, section, text) in rx {
         println!("Got law section: {:?} of chapter {:?}", section, chapter);
-        law_sections_text.insert(get_section_key(&chapter, &section), text);
+        let law_chapter_key = get_section_key(&chapter, &section);
+        let bill_sections = law_section_bill_sections.get(&law_chapter_key);
+        match bill_sections {
+            Some(b) => {
+                let law_section_text = LawSectionWithText {
+                    law_chapter_key,
+                    text,
+                    bill_section_keys: b.to_vec(),
+                };
+                law_sections_text.push(law_section_text);
+            }
+            None => {
+                // TODO: This should not happen?
+                let law_section_text = LawSectionWithText {
+                    law_chapter_key,
+                    text,
+                    bill_section_keys: Vec::new(),
+                };
+                law_sections_text.push(law_section_text);
+            }
+        }
     }
+
     law_sections_text
 }
 
@@ -657,24 +912,24 @@ pub fn format_law_section(law_section: &String) -> String {
         .trim_end()
         .to_owned();
     match last_char {
-        '¼' => all_but_last_char + "1~4",
-        '½' => all_but_last_char + "1~2",
-        '¾' => all_but_last_char + "3~4",
-        '⅐' => all_but_last_char + "1~7",
-        '⅑' => all_but_last_char + "1~9",
-        '⅒' => all_but_last_char + "1~10",
-        '⅓' => all_but_last_char + "1~3",
-        '⅔' => all_but_last_char + "2~3",
-        '⅕' => all_but_last_char + "1~5",
-        '⅖' => all_but_last_char + "2~5",
-        '⅗' => all_but_last_char + "3~5",
-        '⅘' => all_but_last_char + "4~5",
-        '⅙' => all_but_last_char + "1~6",
-        '⅚' => all_but_last_char + "5~6",
-        '⅛' => all_but_last_char + "1~8",
-        '⅜' => all_but_last_char + "3~8",
-        '⅝' => all_but_last_char + "5~8",
-        '⅞' => all_but_last_char + "7~8",
+        '¼' => all_but_last_char + " 1~4",
+        '½' => all_but_last_char + " 1~2",
+        '¾' => all_but_last_char + " 3~4",
+        '⅐' => all_but_last_char + " 1~7",
+        '⅑' => all_but_last_char + " 1~9",
+        '⅒' => all_but_last_char + " 1~10",
+        '⅓' => all_but_last_char + " 1~3",
+        '⅔' => all_but_last_char + " 2~3",
+        '⅕' => all_but_last_char + " 1~5",
+        '⅖' => all_but_last_char + " 2~5",
+        '⅗' => all_but_last_char + " 3~5",
+        '⅘' => all_but_last_char + " 4~5",
+        '⅙' => all_but_last_char + " 1~6",
+        '⅚' => all_but_last_char + " 5~6",
+        '⅛' => all_but_last_char + " 1~8",
+        '⅜' => all_but_last_char + " 3~8",
+        '⅝' => all_but_last_char + " 5~8",
+        '⅞' => all_but_last_char + " 7~8",
         _ => law_section.to_string(),
     }
 }
