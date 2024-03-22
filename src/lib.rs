@@ -330,6 +330,7 @@ fn mark_text(
     let is_inserting = markup_regex.inserting.is_match(&*bill_section_text);
     let is_words = markup_regex.words.is_match(&*bill_section_text);
     let is_sections = markup_regex.sections.is_match(&*bill_section_text);
+    let is_subsections = markup_regex.subsections.is_match(&*bill_section_text);
     let is_lines = markup_regex.lines.is_match(&*bill_section_text);
     let mut marked_text = law_section_text.clone();
 
@@ -388,6 +389,36 @@ fn mark_text(
                 );
 
                 marked_text = law_section_text.replace(&striked_words, &*replacement)
+            }
+        }
+        // Striking and inserting subsections(s)
+        else if is_subsections {
+            if let Some(caps) = markup_regex
+                .replace_subsection
+                .captures(bill_section_text.as_ref())
+            {
+                let subsection_char = String::from(caps[1].trim());
+                let insert = String::from(caps[2].trim());
+
+                // Create string for regex
+                let get_subsection_regex_string = format!(
+                    r"(?i)(\n|^)(section \d+.\s*)?(\({}\))([\s\S]*?)^(\([^\d\W]\))",
+                    subsection_char
+                );
+                let get_subsection_regex =
+                    Regex::new(get_subsection_regex_string.as_ref()).unwrap();
+                if let Some(caps) = get_subsection_regex.captures(law_section_text.as_ref()) {
+                    let subsection = String::from(caps[3].trim());
+
+                    // Format replacement
+                    let replacement = format!(
+                        "\
+                [.line-through .red]#{subsection}#\n\n[.blue]#{insert}#^{bill_section_number}^\
+                "
+                    );
+
+                    marked_text = law_section_text.replace(&subsection, &*replacement)
+                }
             }
         }
         // Striking and inserting section(s)
@@ -450,7 +481,7 @@ fn mark_text(
 }
 fn mark_section_text(
     law_section: &LawSectionWithText,
-    bill_section: &Vec<BillSection>,
+    bill_sections: &Vec<BillSection>,
     markup_regex: &MarkupRegex,
 ) -> Option<String> {
     // Parse law section title and contents
@@ -461,19 +492,19 @@ fn mark_section_text(
         let title = String::from(caps[1].trim());
         let law_section_text = String::from(caps[2].trim());
 
-        let mut marked_text = String::new();
+        let mut marked_text = law_section_text.clone();
 
         // Apply markups for law_section across all applicable bill sections
         for bill_section_key in &law_section.bill_section_keys {
-            if let Some(section) = bill_section
+            if let Some(bill_section) = bill_sections
                 .iter()
                 .find(|bill_section| &bill_section.section_number == bill_section_key)
             {
                 // need to sort out law section vs bill section
                 marked_text = mark_text(
-                    &law_section_text,
-                    &section.text,
-                    &section.section_number,
+                    &marked_text,
+                    &bill_section.text,
+                    &bill_section.section_number,
                     markup_regex,
                 );
             }
@@ -540,11 +571,13 @@ pub struct MarkupRegex {
     inserting: Regex,
     words: Regex,
     sections: Regex,
+    subsections: Regex,
     lines: Regex,
     repealed: Regex,
     replace_words: Regex,
     replace_lines: Regex,
     replace_section: Regex,
+    replace_subsection: Regex,
     strike_words: Regex,
     strike_lines: Regex,
     strike_section: Regex,
@@ -561,11 +594,13 @@ pub fn init_markup_regex() -> MarkupRegex {
         inserting: Regex::new(r"insert").unwrap(),
         words: Regex::new(r"words?").unwrap(),
         sections: Regex::new(r"sections?").unwrap(),
+        subsections: Regex::new(r"subsections?").unwrap(),
         lines: Regex::new(r"lines?").unwrap(),
         repealed: Regex::new(r"repealed ?(.*)").unwrap(),
         replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
         replace_lines: Regex::new(r#"strik.*lines (\d*)[^\d]*(\d*).*insert.*?:-?(.*)"#).unwrap(),
         replace_section: Regex::new(r"strik?.*section.*insert.*?:-?(.*)").unwrap(),
+        replace_subsection: Regex::new(r"strik?.*subsection \((.)\).*insert.*?:-?(.*)").unwrap(),
         strike_words: Regex::new(r#"strik.*(“|")(.*)(”|")?\."#).unwrap(),
         strike_lines: Regex::new(r"strike_lines").unwrap(),
         strike_section: Regex::new(r"strike_section").unwrap(),
