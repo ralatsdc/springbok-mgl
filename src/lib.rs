@@ -398,24 +398,27 @@ fn mark_text(
                 .captures(bill_section_text.as_ref())
             {
                 let subsection_char = String::from(caps[1].trim());
-                let insert = String::from(caps[2].trim());
+                let insert = String::from(caps[2].trim()).replace("&nbsp", "\n");
 
                 // Create string for regex
                 let get_subsection_regex_string = format!(
-                    r"(?i)(\n|^)(section \d+.\s*)?(\({}\))([\s\S]*?)^(\([^\d\W]\))",
+                    r"(?i)(\n|^)(section \d+.\s*)?(\({}\))([\s\S]*?)\n(\([^\d\W]\))",
                     subsection_char
                 );
                 let get_subsection_regex =
                     Regex::new(get_subsection_regex_string.as_ref()).unwrap();
                 if let Some(caps) = get_subsection_regex.captures(law_section_text.as_ref()) {
-                    let subsection = String::from(caps[3].trim());
+                    let subsection_header = String::from(caps[3].trim());
+                    let subsection_content = String::from(caps[4].trim());
+                    let subsection = format!("{} {}", subsection_header, subsection_content);
 
                     // Format replacement
-                    let replacement = format!(
+                    let mut replacement = format!(
                         "\
-                [.line-through .red]#{subsection}#\n\n[.blue]#{insert}#^{bill_section_number}^\
+                [.line-through .red]##{subsection}##\n\n[.blue]##{insert}##^{bill_section_number}^\
                 "
                     );
+                    replacement = replacement.replace("\n", " +\n");
 
                     marked_text = law_section_text.replace(&subsection, &*replacement)
                 }
@@ -593,8 +596,8 @@ pub fn init_markup_regex() -> MarkupRegex {
         striking: Regex::new(r"strik").unwrap(),
         inserting: Regex::new(r"insert").unwrap(),
         words: Regex::new(r"words?").unwrap(),
-        sections: Regex::new(r"sections?").unwrap(),
-        subsections: Regex::new(r"subsections?").unwrap(),
+        sections: Regex::new(r"sections?:").unwrap(),
+        subsections: Regex::new(r"subsections?:").unwrap(),
         lines: Regex::new(r"lines?").unwrap(),
         repealed: Regex::new(r"repealed ?(.*)").unwrap(),
         replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
