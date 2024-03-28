@@ -356,10 +356,16 @@ fn mark_text(
             {
                 let striked_words = String::from(&caps[2]);
                 let inserted_words = String::from(&caps[4]);
+                let mut buffer = "";
+
+                // Handle asciidoc not marking up document if buffer before class not present
+                if striked_words.starts_with([',', '.', ':', ' ']) {
+                    buffer = " ";
+                }
                 // Format replacement
                 let replacement = format!(
                     "\
-                    [.line-through .red]#{striked_words}# \
+                    {buffer}[.line-through .red]#{striked_words}# \
                     [.blue]#{inserted_words}#^{bill_section_number}^\
                     "
                 );
@@ -398,11 +404,11 @@ fn mark_text(
                 .captures(bill_section_text.as_ref())
             {
                 let subsection_char = String::from(caps[1].trim());
-                let insert = String::from(caps[2].trim()).replace("&nbsp", "\n");
+                let insert = String::from(caps[2].trim());
 
                 // Create string for regex
                 let get_subsection_regex_string = format!(
-                    r"(?i)(\n|^)(section \d+.\s*)?(\({}\))([\s\S]*?)\n(\([^\d\W]\))",
+                    r"(?i)(\n|^)(section \d+.\s*)?(\({}\))([\s\S]*?)\n(\[.*\]|\([^\d\W]\))",
                     subsection_char
                 );
                 let get_subsection_regex =
@@ -488,9 +494,6 @@ fn mark_section_text(
     markup_regex: &MarkupRegex,
 ) -> Option<String> {
     // Parse law section title and contents
-    if law_section.law_chapter_key == "269-10" {
-        println!("123")
-    }
     if let Some(caps) = markup_regex.text_parse.captures(law_section.text.as_ref()) {
         let title = String::from(caps[1].trim());
         let law_section_text = String::from(caps[2].trim());
@@ -557,10 +560,12 @@ pub fn init_section_regex() -> SectionRegex {
         striking: Regex::new(r"striking").unwrap(),
         inserting: Regex::new(r"inserting").unwrap(),
         repealed: Regex::new(r"repealed").unwrap(),
-        law_chapter: Regex::new(r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?[cC]hapter\s*(\d*\w*)")
-            .unwrap(),
+        law_chapter: Regex::new(
+            r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.:-]*?[cC]hapter\s*(\d*\w*)",
+        )
+        .unwrap(),
         law_section: Regex::new(
-            r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.]*?([sS]ection[s]*)\s*(\d*\w*)",
+            r"^\s*(?i)section [\d+][^a-z](?-i)\.*[^\.:-]*?([sS]ection[s]*)\s*(\d*\w*)",
         )
         .unwrap(),
         section_list: Regex::new(r"(\d+\w*\s*[\u00BC-\u00BE\u2150-\u215E]*)[,\s]").unwrap(),
@@ -603,7 +608,8 @@ pub fn init_markup_regex() -> MarkupRegex {
         replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
         replace_lines: Regex::new(r#"strik.*lines (\d*)[^\d]*(\d*).*insert.*?:-?(.*)"#).unwrap(),
         replace_section: Regex::new(r"strik?.*section.*insert.*?:-?(.*)").unwrap(),
-        replace_subsection: Regex::new(r"strik?.*subsection \((.)\).*insert.*?:-?(.*)").unwrap(),
+        replace_subsection: Regex::new(r"strik?.*subsection \((.)\).*insert.*?:-?([\s\S]*)")
+            .unwrap(),
         strike_words: Regex::new(r#"strik.*(“|")(.*)(”|")?\."#).unwrap(),
         strike_lines: Regex::new(r"strike_lines").unwrap(),
         strike_section: Regex::new(r"strike_section").unwrap(),
@@ -653,7 +659,11 @@ pub fn collect_bill_sections(
             }
             section_text.clear();
         }
-        section_text.push_str(text_str);
+        if section_text.is_empty() {
+            section_text.push_str(text_str);
+        } else {
+            section_text.push_str(&*format!("\n{}", text_str))
+        }
     }
     // Collect final bill section
     collect_bill_section(&section_text, section_regex, &mut bill);
