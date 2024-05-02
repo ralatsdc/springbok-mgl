@@ -1,6 +1,7 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::info;
+use std::string::String;
 
 use springbok_mgl::*;
 
@@ -27,8 +28,9 @@ fn main() {
             let text_nodes = get_bill_text_nodes(bill_url);
 
             // Write the bill text when to a file
+            let output_folder = search_term;
             if let Some(output_filename) = cli.output_filename {
-                write_text_nodes(&text_nodes, output_filename);
+                write_text_nodes(&text_nodes, output_filename, &output_folder);
             }
 
             // Collect bill sections and law sections into structs with regex
@@ -40,7 +42,7 @@ fn main() {
             let law_sections_text = get_required_law_sections(&bill);
             // Mark up documents
             let markup_regex = init_markup_regex();
-            write_asciidocs(law_sections_text, &bill, &markup_regex);
+            write_asciidocs(law_sections_text, &bill, &markup_regex, output_folder);
         } else {
             info!("Search term is not a bill number")
         }

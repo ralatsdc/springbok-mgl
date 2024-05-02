@@ -13,7 +13,8 @@ use std::path::Path;
 use std::sync::mpsc;
 
 use std::sync::mpsc::Sender;
-use std::thread;
+use std::{fs, thread};
+use url::quirks::search;
 use url::Url;
 
 // See:
@@ -302,9 +303,11 @@ pub fn get_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     text_nodes
 }
 
-pub fn write_text_nodes(text_nodes: &Vec<String>, output_filename: String) {
+pub fn write_text_nodes(text_nodes: &Vec<String>, output_filename: String, output_folder: &String) {
     // Print each text node of the bill to a file
-    let path = Path::new(output_filename.as_str());
+    fs::create_dir_all(output_folder);
+    let str_path = [output_folder, output_filename.as_str()].join("/");
+    let path = Path::new(&str_path);
     let display = path.display();
     let mut file = match File::create(&path) {
         Err(why) => panic!("Couldn't create {}: {}", display, why),
@@ -558,12 +561,14 @@ pub fn write_asciidocs(
     law_sections_text: Vec<LawSectionWithText>,
     bill_sections_text: &Vec<BillSection>,
     markup_regex: &MarkupRegex,
+    output_folder: String,
 ) -> std::io::Result<()> {
     for law_section in law_sections_text {
         let file_name = &law_section.law_chapter_key;
         if let Some(marked_text) = mark_section_text(&law_section, bill_sections_text, markup_regex)
         {
-            let mut file = File::create(format!("{file_name}.adoc"))?;
+            fs::create_dir_all(format!("{output_folder}/modified-laws"));
+            let mut file = File::create(format!("{output_folder}/modified-laws/{file_name}.adoc"))?;
             file.write_all(marked_text.as_ref())?;
         } else {
             println!("Could not mark up law section: {file_name}")
