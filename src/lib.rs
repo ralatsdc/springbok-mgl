@@ -318,6 +318,33 @@ pub fn write_text_nodes(text_nodes: &Vec<String>, output_filename: String) {
     }
 }
 
+// TODO: Document these?
+pub fn init_markup_regex() -> MarkupRegex {
+    MarkupRegex {
+        text_parse: Regex::new(r"((?i)section.*)[\n\s]*([\S\s]*)").unwrap(),
+        striking: Regex::new(r"strik").unwrap(),
+        inserting: Regex::new(r"insert").unwrap(),
+        words: Regex::new(r"words?").unwrap(),
+        sections: Regex::new(r"sections?:").unwrap(),
+        subsections: Regex::new(r"(subsections?|subclauses?):").unwrap(),
+        lines: Regex::new(r"lines?").unwrap(),
+        repealed: Regex::new(r"repealed ?(.*)").unwrap(),
+        replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
+        replace_lines: Regex::new(r#"strik.*lines (\d*)[^\d]*(\d*).*insert.*?:-?(.*)"#).unwrap(),
+        replace_section: Regex::new(r"strik?.*section.*insert.*?:-?(.*)").unwrap(),
+        replace_subsection: Regex::new(
+            r"strik?.*(subsection|subclause) \((.)\).*insert.*?:-?([\s\S]*)",
+        )
+        .unwrap(),
+        strike_words: Regex::new(r#"strik.*(“|")(.*)(”|")?\."#).unwrap(),
+        strike_lines: Regex::new(r"strike_lines").unwrap(),
+        strike_section: Regex::new(r"strike_section").unwrap(),
+        insert_words: Regex::new(r#"insert.*word.*(“|")(.*)(”|").*.*?:-? (.*)\."#).unwrap(),
+        insert_lines: Regex::new(r"insert_lines").unwrap(),
+        insert_section: Regex::new(r"insert_section").unwrap(),
+    }
+}
+
 fn mark_text(
     law_section_text: &String,
     bill_section_text: &String,
@@ -403,8 +430,8 @@ fn mark_text(
                 .replace_subsection
                 .captures(bill_section_text.as_ref())
             {
-                let subsection_char = String::from(caps[1].trim());
-                let insert = String::from(caps[2].trim());
+                let subsection_char = String::from(caps[2].trim());
+                let insert = String::from(caps[3].trim());
 
                 // Create string for regex
                 let get_subsection_regex_string = format!(
@@ -467,21 +494,26 @@ fn mark_text(
         }
         // Striking line(s)
         else if is_lines {
+            println!("Striking lines not implemented!")
         }
         // Striking section(s)
         else if is_sections {
+            println!("Striking sections not implemented!")
         }
     }
     // Inserting
     else if is_inserting {
         // Inserting words
         if is_words {
+            println!("Inserting words not implemented!")
         }
         // Inserting line(s)
         else if is_lines {
+            println!("Inserting lines not implemented!")
         }
         // Inserting section(s)
         else if is_sections {
+            println!("Inserting sections not implemented!")
         }
     } else {
         println!("Not sure what section does: {}", &*law_section_text);
@@ -592,31 +624,6 @@ pub struct MarkupRegex {
     insert_words: Regex,
     insert_lines: Regex,
     insert_section: Regex,
-}
-
-// TODO: Document these?
-pub fn init_markup_regex() -> MarkupRegex {
-    MarkupRegex {
-        text_parse: Regex::new(r"((?i)section.*)[\n\s]*([\S\s]*)").unwrap(),
-        striking: Regex::new(r"strik").unwrap(),
-        inserting: Regex::new(r"insert").unwrap(),
-        words: Regex::new(r"words?").unwrap(),
-        sections: Regex::new(r"sections?:").unwrap(),
-        subsections: Regex::new(r"subsections?:").unwrap(),
-        lines: Regex::new(r"lines?").unwrap(),
-        repealed: Regex::new(r"repealed ?(.*)").unwrap(),
-        replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
-        replace_lines: Regex::new(r#"strik.*lines (\d*)[^\d]*(\d*).*insert.*?:-?(.*)"#).unwrap(),
-        replace_section: Regex::new(r"strik?.*section.*insert.*?:-?(.*)").unwrap(),
-        replace_subsection: Regex::new(r"strik?.*subsection \((.)\).*insert.*?:-?([\s\S]*)")
-            .unwrap(),
-        strike_words: Regex::new(r#"strik.*(“|")(.*)(”|")?\."#).unwrap(),
-        strike_lines: Regex::new(r"strike_lines").unwrap(),
-        strike_section: Regex::new(r"strike_section").unwrap(),
-        insert_words: Regex::new(r"insert_words").unwrap(),
-        insert_lines: Regex::new(r"insert_lines").unwrap(),
-        insert_section: Regex::new(r"insert_section").unwrap(),
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
