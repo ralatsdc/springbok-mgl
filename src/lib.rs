@@ -303,7 +303,7 @@ pub fn get_bill_text_nodes(bill_url: &Url) -> Vec<String> {
     text_nodes
 }
 
-pub fn write_text_nodes(text_nodes: &Vec<String>, output_filename: String, output_folder: &String) {
+pub fn write_text_nodes(text_nodes: Vec<String>, output_filename: String, output_folder: &String) {
     // Print each text node of the bill to a file
     fs::create_dir_all(output_folder);
     let str_path = [output_folder, output_filename.as_str()].join("/");
@@ -655,7 +655,7 @@ fn init_section_counts() -> SectionCounts {
 }
 
 pub fn collect_bill_sections(
-    text_nodes: Vec<String>,
+    text_nodes: &Vec<String>,
     section_regex: &SectionRegex,
 ) -> Vec<BillSection> {
     let mut bill = Vec::new();
@@ -738,6 +738,10 @@ pub fn count_bill_section_types(
             }
         }
     }
+    section_counts
+}
+
+pub fn print_bill_section_types(section_counts: SectionCounts) -> () {
     println!("Total sections: {}", section_counts.total);
     println!("Amending sections: {}", section_counts.amending);
     println!(
@@ -754,7 +758,6 @@ pub fn count_bill_section_types(
     );
     println!("Repealing sections: {}", section_counts.repealing);
     println!("Other sections: {}", section_counts.other);
-    section_counts
 }
 
 #[derive(Debug)]

@@ -27,22 +27,27 @@ fn main() {
             info!("Value for bill URL: {bill_url}");
             let text_nodes = get_bill_text_nodes(bill_url);
 
-            // Write the bill text when to a file
-            let output_folder = search_term;
-            if let Some(output_filename) = cli.output_filename {
-                write_text_nodes(&text_nodes, output_filename, &output_folder);
-            }
-
             // Collect bill sections and law sections into structs with regex
             let section_regex = init_section_regex();
-            let bill = collect_bill_sections(text_nodes, &section_regex);
-            // Count type of bill sections with regex
-            let _section_counts = count_bill_section_types(&bill, &section_regex);
+            let bill = collect_bill_sections(&text_nodes, &section_regex);
 
-            let law_sections_text = get_required_law_sections(&bill);
-            // Mark up documents
-            let markup_regex = init_markup_regex();
-            write_asciidocs(law_sections_text, &bill, &markup_regex, output_folder);
+            // Count and print type of bill sections with regex
+            let section_counts = count_bill_section_types(&bill, &section_regex);
+            print_bill_section_types(section_counts);
+
+            // Create markup documents when output_filename specified
+            if let Some(output_filename) = cli.output_filename {
+                // Download all referenced law sections from bill
+                let law_sections_text = get_required_law_sections(&bill);
+
+                // Write the bill text to a file
+                let output_folder = search_term;
+                write_text_nodes(text_nodes, output_filename, &output_folder);
+
+                // Write laws with bill proposed modifications
+                let markup_regex = init_markup_regex();
+                write_asciidocs(law_sections_text, &bill, &markup_regex, output_folder);
+            }
         } else {
             info!("Search term is not a bill number")
         }
