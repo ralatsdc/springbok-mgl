@@ -4,9 +4,9 @@ mod malegislature;
 mod markup;
 
 use clap::Parser;
+use fancy_regex::Regex;
 use indexmap::IndexMap;
 use log::{debug, error, info};
-use regex::Regex;
 use scraper::{Element, ElementRef, Html, Selector};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;

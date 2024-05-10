@@ -1,6 +1,6 @@
 use crate::law_section::{collect_law_sections, LawSections};
+use fancy_regex::Regex;
 use log::info;
-use regex::Regex;
 use scraper::{Html, Selector};
 use url::Url;
 
@@ -71,7 +71,7 @@ pub fn collect_bill_sections(
 
     for text_node in text_nodes {
         let text_str = text_node.as_str();
-        if section_regex.bill_section.is_match(text_str) {
+        if section_regex.bill_section.is_match(text_str).unwrap() {
             // Indicates section_text is a complete section of bill
             if !section_text.is_empty() {
                 // Collect bill section
@@ -97,7 +97,7 @@ fn collect_bill_section(
 ) {
     let section_str = section_text.as_str();
     let mut section_number = String::from("");
-    if let Some(caps) = section_regex.bill_section.captures(section_str) {
+    if let Some(caps) = section_regex.bill_section.captures(section_str).unwrap() {
         section_number = String::from(&caps[1]);
     } else {
         println!("{section_str}");
@@ -140,11 +140,17 @@ pub fn count_bill_section_types(
     section_counts.total = bill.len() as i32;
     for bill_section in bill {
         // println!("Bill Section: {:?}", bill_section);
-        if section_regex.amended.is_match(&*bill_section.text) {
+        if section_regex.amended.is_match(&*bill_section.text).unwrap() {
             // Section amends an existing law
             section_counts.amending += 1;
-            let is_striking = section_regex.striking.is_match(&*bill_section.text);
-            let is_inserting = section_regex.inserting.is_match(&*bill_section.text);
+            let is_striking = section_regex
+                .striking
+                .is_match(&*bill_section.text)
+                .unwrap();
+            let is_inserting = section_regex
+                .inserting
+                .is_match(&*bill_section.text)
+                .unwrap();
             if is_striking && is_inserting {
                 // Section strikes out and inserts
                 section_counts.amending_by_striking_and_inserting += 1;
@@ -158,7 +164,10 @@ pub fn count_bill_section_types(
                 println!("NOT striking or inserting: {}", &*bill_section.text);
             }
         } else {
-            let is_repealing = section_regex.repealed.is_match(&*bill_section.text);
+            let is_repealing = section_regex
+                .repealed
+                .is_match(&*bill_section.text)
+                .unwrap();
             // Section repeals an existing law
             if is_repealing {
                 section_counts.repealing += 1;

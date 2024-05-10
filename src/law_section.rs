@@ -1,6 +1,6 @@
 use crate::bill_section::{BillSection, BillSectionRegex};
+use fancy_regex::Regex;
 use log::info;
-use regex::Regex;
 use scraper::{Element, Html, Selector};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ pub fn collect_law_sections(_bill_section_number: &str, section_str: &str) -> La
     let law_section_regex = init_law_section_regex();
     // Capture law chapter
     let mut law_chapter = String::from("");
-    if let Some(caps) = law_section_regex.law_chapter.captures(section_str) {
+    if let Some(caps) = law_section_regex.law_chapter.captures(section_str).unwrap() {
         law_chapter = String::from(&caps[1]);
     } else {
         //TODO: Handle this as error instead
@@ -104,7 +104,7 @@ pub fn collect_law_sections(_bill_section_number: &str, section_str: &str) -> La
     }
     // Capture law sections
     let mut law_sections: Vec<String> = Vec::new();
-    if let Some(caps) = law_section_regex.law_section.captures(section_str) {
+    if let Some(caps) = law_section_regex.law_section.captures(section_str).unwrap() {
         if caps[1].trim().to_lowercase().eq("section") {
             // Found a single section
             law_sections.push(String::from((&caps[2]).trim_end()));
@@ -113,7 +113,7 @@ pub fn collect_law_sections(_bill_section_number: &str, section_str: &str) -> La
             let mut sections: Vec<_> = law_section_regex
                 .section_list
                 .find_iter(section_str)
-                .map(|m| m.as_str())
+                .map(|m| m.expect("Bad Regex").as_str())
                 .map(|s| s.trim_end_matches(",").trim_end())
                 .map(|s| String::from(s))
                 .collect();

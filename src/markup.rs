@@ -1,6 +1,6 @@
 use crate::bill_section::BillSection;
 use crate::law_section::LawSectionWithText;
-use regex::Regex;
+use fancy_regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct MarkupRegex {
@@ -22,6 +22,7 @@ pub struct MarkupRegex {
     insert_words: Regex,
     insert_lines: Regex,
     insert_section: Regex,
+    match_sections: Regex,
 }
 // TODO: Document these?
 pub fn init_markup_regex() -> MarkupRegex {
@@ -42,11 +43,12 @@ pub fn init_markup_regex() -> MarkupRegex {
         )
         .unwrap(),
         strike_words: Regex::new(r#"strik.*(“|")(.*)(”|")?\."#).unwrap(),
-        strike_lines: Regex::new(r"strike_lines").unwrap(),
-        strike_section: Regex::new(r"strike_section").unwrap(),
+        strike_lines: Regex::new(r"strike_lines").unwrap(), //TODO: Implement
+        strike_section: Regex::new(r"strike_section").unwrap(), //TODO: Implement
         insert_words: Regex::new(r#"insert.*word.*(“|")(.*)(”|").*.*?:-? (.*)\."#).unwrap(),
-        insert_lines: Regex::new(r"insert_lines").unwrap(),
-        insert_section: Regex::new(r"insert_section").unwrap(),
+        insert_lines: Regex::new(r"insert_lines").unwrap(), //TODO: Implement
+        insert_section: Regex::new(r"insert.*sections?:-?([\s\S]*)").unwrap(),
+        match_sections: Regex::new(r"Section[\s\S]*?(?=Section|\z)").unwrap(),
     }
 }
 pub(crate) fn mark_section_text(
@@ -55,7 +57,7 @@ pub(crate) fn mark_section_text(
     markup_regex: &MarkupRegex,
 ) -> Option<String> {
     // Parse law section title and contents
-    if let Some(caps) = markup_regex.text_parse.captures(law_section.text.as_ref()) {
+    if let Ok(Some(caps)) = markup_regex.text_parse.captures(law_section.text.as_ref()) {
         let title = String::from(caps[1].trim());
         let law_section_text = String::from(caps[2].trim());
 
@@ -90,18 +92,24 @@ fn mark_text(
     markup_regex: &MarkupRegex,
 ) -> String {
     // Section amends an existing law
-    let is_repealing = markup_regex.repealed.is_match(&*bill_section_text);
-    let is_striking = markup_regex.striking.is_match(&*bill_section_text);
-    let is_inserting = markup_regex.inserting.is_match(&*bill_section_text);
-    let is_words = markup_regex.words.is_match(&*bill_section_text);
-    let is_sections = markup_regex.sections.is_match(&*bill_section_text);
-    let is_subsections = markup_regex.subsections.is_match(&*bill_section_text);
-    let is_lines = markup_regex.lines.is_match(&*bill_section_text);
+    let is_repealing = markup_regex.repealed.is_match(&*bill_section_text).unwrap();
+    let is_striking = markup_regex.striking.is_match(&*bill_section_text).unwrap();
+    let is_inserting = markup_regex
+        .inserting
+        .is_match(&*bill_section_text)
+        .unwrap();
+    let is_words = markup_regex.words.is_match(&*bill_section_text).unwrap();
+    let is_sections = markup_regex.sections.is_match(&*bill_section_text).unwrap();
+    let is_subsections = markup_regex
+        .subsections
+        .is_match(&*bill_section_text)
+        .unwrap();
+    let is_lines = markup_regex.lines.is_match(&*bill_section_text).unwrap();
     let mut marked_text = law_section_text.clone();
 
     // Repealing
     if is_repealing {
-        if let Some(caps) = markup_regex.repealed.captures(bill_section_text.as_ref()) {
+        if let Ok(Some(caps)) = markup_regex.repealed.captures(bill_section_text.as_ref()) {
             let repeal_specifications = String::from(&caps[1]);
 
             marked_text = format!(
@@ -115,7 +123,7 @@ fn mark_text(
     else if is_striking && is_inserting {
         // Striking and inserting words
         if is_words {
-            if let Some(caps) = markup_regex
+            if let Ok(Some(caps)) = markup_regex
                 .replace_words
                 .captures(bill_section_text.as_ref())
             {
@@ -140,7 +148,7 @@ fn mark_text(
         }
         // Striking and inserting line(s)
         else if is_lines {
-            if let Some(caps) = markup_regex
+            if let Ok(Some(caps)) = markup_regex
                 .replace_lines
                 .captures(bill_section_text.as_ref())
             {
@@ -164,7 +172,7 @@ fn mark_text(
         }
         // Striking and inserting subsections(s)
         else if is_subsections {
-            if let Some(caps) = markup_regex
+            if let Ok(Some(caps)) = markup_regex
                 .replace_subsection
                 .captures(bill_section_text.as_ref())
             {
@@ -178,7 +186,7 @@ fn mark_text(
                 );
                 let get_subsection_regex =
                     Regex::new(get_subsection_regex_string.as_ref()).unwrap();
-                if let Some(caps) = get_subsection_regex.captures(law_section_text.as_ref()) {
+                if let Ok(Some(caps)) = get_subsection_regex.captures(law_section_text.as_ref()) {
                     let subsection_header = String::from(caps[3].trim());
                     let subsection_content = String::from(caps[4].trim());
                     let subsection = format!("{} {}", subsection_header, subsection_content);
@@ -197,7 +205,7 @@ fn mark_text(
         }
         // Striking and inserting section(s)
         else if is_sections {
-            if let Some(caps) = markup_regex
+            if let Ok(Some(caps)) = markup_regex
                 .replace_section
                 .captures(bill_section_text.as_ref())
             {
@@ -215,7 +223,7 @@ fn mark_text(
     else if is_striking {
         // Striking words
         if is_words {
-            if let Some(caps) = markup_regex
+            if let Ok(Some(caps)) = markup_regex
                 .strike_words
                 .captures(bill_section_text.as_ref())
             {
@@ -251,7 +259,24 @@ fn mark_text(
         }
         // Inserting section(s)
         else if is_sections {
-            println!("Inserting sections not implemented!")
+            if let Ok(Some(caps)) = markup_regex
+                .insert_section
+                .captures(bill_section_text.as_ref())
+            {
+                let section_text = String::from(caps[1].trim());
+                let matches: Vec<_> = markup_regex
+                    .match_sections
+                    .find_iter(&section_text)
+                    .map(|m| m.expect("BAD REGEX").as_str().trim())
+                    .collect();
+                let insert = matches.join("#\n\n[.blue]#");
+                // Format replacement
+                marked_text = format!(
+                    "\
+                        {law_section_text}\n\n[.blue]#{insert}#^{bill_section_number}^\
+                        "
+                )
+            }
         }
     } else {
         println!("Not sure what section does: {}", &*law_section_text);
