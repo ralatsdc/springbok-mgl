@@ -131,44 +131,55 @@ fn mark_text(
                 let inserted_words = String::from(&caps[4]);
                 let mut buffer = "";
 
-                // Handle asciidoc not marking up document if buffer before class not present
-                if striked_words.starts_with([',', '.', ':', ' ']) {
-                    buffer = " ";
-                }
-                // Format replacement
-                let replacement = format!(
-                    "\
+                let matches: Vec<&str> = law_section_text.matches(&striked_words).collect();
+                // Replace word(s) only if one instance appears
+                if matches.len() == 1 {
+                    // Handle asciidoc not marking up document if buffer before class not present
+                    if striked_words.starts_with([',', '.', ':', ' ']) {
+                        buffer = " ";
+                    }
+                    // Format replacement
+                    let replacement = format!(
+                        "\
                     {buffer}[.line-through .red]#{striked_words}# \
                     [.blue]#{inserted_words}#^{bill_section_number}^\
                     "
-                );
+                    );
 
-                marked_text = law_section_text.replace(&striked_words, &*replacement)
+                    marked_text = law_section_text.replace(&striked_words, &*replacement)
+                } else {
+                    println!(
+                        "Replacing Words: ambiguous - bill section will be added as a footnote."
+                    );
+                    marked_text = format!("{}\n\n_{}_", law_section_text, bill_section_text.trim())
+                }
             }
         }
         // Striking and inserting line(s)
         else if is_lines {
-            if let Ok(Some(caps)) = markup_regex
-                .replace_lines
-                .captures(bill_section_text.as_ref())
-            {
-                let strike_start_line = String::from(&caps[1]);
-                let strike_end_line = String::from(&caps[2]);
-                let inserted_words = String::from(&caps[3]);
-
-                //TODO: figure out how to convert line numbers into actual strings
-                let striked_words = String::from("PLACEHOLDER");
-
-                // Format replacement
-                let replacement = format!(
-                    "\
-                [.line-through .red]#{striked_words}# \
-                [.blue]#{inserted_words}#^{bill_section_number}^\
-                "
-                );
-
-                marked_text = law_section_text.replace(&striked_words, &*replacement)
-            }
+            // if let Ok(Some(caps)) = markup_regex
+            //     .replace_lines
+            //     .captures(bill_section_text.as_ref())
+            // {
+            //     let strike_start_line = String::from(&caps[1]);
+            //     let strike_end_line = String::from(&caps[2]);
+            //     let inserted_words = String::from(&caps[3]);
+            //
+            //     //TODO: figure out how to convert line numbers into actual strings
+            //     let striked_words = String::from("PLACEHOLDER");
+            //
+            //     // Format replacement
+            //     let replacement = format!(
+            //         "\
+            //     [.line-through .red]#{striked_words}# \
+            //     [.blue]#{inserted_words}#^{bill_section_number}^\
+            //     "
+            //     );
+            //
+            //     marked_text = law_section_text.replace(&striked_words, &*replacement)
+            // }
+            println!("Replacing Line: line numbers are not included in the online version of the law, and thus cannot be accurately included. Bill section will be added as a footnote.");
+            marked_text = format!("{}\n\n_{}_", law_section_text, bill_section_text.trim())
         }
         // Striking and inserting subsections(s)
         else if is_subsections {
@@ -240,7 +251,8 @@ fn mark_text(
         }
         // Striking line(s)
         else if is_lines {
-            println!("Striking lines not implemented!")
+            println!("Striking Line: line numbers are not included in the online version of the law, and thus cannot be accurately included. Bill section will be added as a footnote.");
+            marked_text = format!("{}\n\n_{}_", law_section_text, bill_section_text.trim())
         }
         // Striking section(s)
         else if is_sections {
@@ -251,11 +263,13 @@ fn mark_text(
     else if is_inserting {
         // Inserting words
         if is_words {
-            println!("Inserting words not implemented!")
+            println!("Inserting Words (at line): line numbers are not included in the online version of the law, and thus cannot be accurately included. Bill section will be added as a footnote.");
+            marked_text = format!("{}\n\n_{}_", law_section_text, bill_section_text.trim())
         }
         // Inserting line(s)
         else if is_lines {
-            println!("Inserting lines not implemented!")
+            println!("Inserting Line: line numbers are not included in the online version of the law, and thus cannot be accurately included. Bill section will be added as a footnote.");
+            marked_text = format!("{}\n\n_{}_", law_section_text, bill_section_text.trim())
         }
         // Inserting section(s)
         else if is_sections {
