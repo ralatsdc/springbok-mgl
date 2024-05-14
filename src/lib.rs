@@ -3,28 +3,25 @@ mod law_section;
 mod malegislature;
 mod markup;
 
+use crate::{bill_section::BillSection, markup::MarkupRegex};
 use clap::Parser;
 use fancy_regex::Regex;
 use indexmap::IndexMap;
 use log::{debug, error, info};
 use scraper::{Element, ElementRef, Html, Selector};
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-
-use std::fs::File;
-use std::hash::Hash;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-
-use crate::bill_section::BillSection;
-use crate::markup::MarkupRegex;
-use std::error::Error;
-use std::process::Command;
-use std::sync::mpsc::Sender;
-use std::{fs, thread};
-use url::quirks::search;
-use url::Url;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    error::Error,
+    fs,
+    fs::File,
+    hash::Hash,
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{mpsc, mpsc::Sender},
+    thread,
+};
+use url::{quirks::search, Url};
 
 // See:
 // - https://docs.rs/clap/latest/clap/_derive/_tutorial/chapter_0/index.html#

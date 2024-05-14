@@ -1,9 +1,8 @@
 use clap::Parser;
 use indexmap::IndexMap;
 use log::info;
-use std::string::String;
-
 use springbok_mgl::*;
+use std::string::String;
 
 fn main() {
     // Init logger

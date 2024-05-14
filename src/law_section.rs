@@ -2,11 +2,11 @@ use crate::bill_section::{BillSection, BillSectionRegex};
 use fancy_regex::Regex;
 use log::info;
 use scraper::{Element, Html, Selector};
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::sync::mpsc;
-use std::sync::mpsc::Sender;
-use std::thread;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::{mpsc, mpsc::Sender},
+    thread,
+};
 use url::Url;
 
 pub fn get_section_key(chapter: &String, section: &String) -> String {

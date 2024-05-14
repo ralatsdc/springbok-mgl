@@ -1,8 +1,6 @@
-use crate::bill_section::BillSection;
-use crate::law_section::LawSectionWithText;
+use crate::{bill_section::BillSection, law_section::LawSectionWithText};
 use fancy_regex::Regex;
-use std::error::Error;
-use std::path::PathBuf;
+use std::{error::Error, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct MarkupRegex {
