@@ -30,8 +30,12 @@ fn main() {
                 let output_folder = search_term;
                 write_bill(&bill, output_filename, &output_folder);
 
-                // Write laws with bill proposed modifications
-                write_asciidocs(law_sections_text, &bill, output_folder);
+                // Write laws with bill proposed modifications in asciidoc format
+                let law_folder = "modified-laws";
+                write_asciidocs(law_sections_text, &bill, &output_folder, law_folder);
+
+                // Run asciidoctor over newly created .adoc files
+                let _ = run_asciidoctor(output_folder, law_folder);
             }
         } else {
             info!("Search term is not a bill number")

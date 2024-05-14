@@ -1,6 +1,8 @@
 use crate::bill_section::BillSection;
 use crate::law_section::LawSectionWithText;
 use fancy_regex::Regex;
+use std::error::Error;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct MarkupRegex {
@@ -296,4 +298,22 @@ fn mark_text(
         println!("Not sure what section does: {}", &*law_section_text);
     }
     marked_text
+}
+
+pub(crate) fn get_adoc_paths(dir: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    let paths = std::fs::read_dir(dir)?
+        // Filter out all those directory entries which couldn't be read
+        .filter_map(|res| res.ok())
+        // Map the directory entries to paths
+        .map(|dir_entry| dir_entry.path())
+        // Filter out all paths with extensions other than `csv`
+        .filter_map(|path| {
+            if path.extension().map_or(false, |ext| ext == "adoc") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(paths)
 }

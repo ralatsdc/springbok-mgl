@@ -14,11 +14,13 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use crate::bill_section::BillSection;
 use crate::markup::MarkupRegex;
+use std::error::Error;
+use std::process::Command;
 use std::sync::mpsc::Sender;
 use std::{fs, thread};
 use url::quirks::search;
@@ -195,7 +197,8 @@ pub fn write_bill(bill: &Vec<BillSection>, output_filename: String, output_folde
 pub fn write_asciidocs(
     law_sections_text: Vec<law_section::LawSectionWithText>,
     bill_sections_text: &Vec<BillSection>,
-    output_folder: String,
+    output_folder: &String,
+    law_folder: &str,
 ) -> std::io::Result<()> {
     let markup_regex = markup::init_markup_regex();
     for law_section in law_sections_text {
@@ -203,7 +206,7 @@ pub fn write_asciidocs(
         if let Some(marked_text) =
             markup::mark_section_text(&law_section, bill_sections_text, &markup_regex)
         {
-            fs::create_dir_all(format!("{output_folder}/modified-laws"));
+            fs::create_dir_all(format!("{output_folder}/{law_folder}"));
             let mut file = File::create(format!("{output_folder}/modified-laws/{file_name}.adoc"))?;
             file.write_all(marked_text.as_ref())?;
         } else {
@@ -211,4 +214,16 @@ pub fn write_asciidocs(
         }
     }
     Ok(())
+}
+
+pub fn run_asciidoctor(output_folder: String, law_folder: &str) -> () {
+    let paths = markup::get_adoc_paths(&format!("{output_folder}/{law_folder}")).unwrap();
+
+    for path in paths {
+        let mut asciidoctor = Command::new("sh");
+        asciidoctor.arg("asciidoctor").arg(path.as_os_str());
+        let _ = asciidoctor.output().expect(
+            "Failed to parse file - is asciidoctor installed? (i.e. ~brew install asciidoctor)",
+        );
+    }
 }
