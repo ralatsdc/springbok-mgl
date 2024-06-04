@@ -119,11 +119,13 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
             let section_key = law_section::get_section_key(&law_chapter, law_section);
 
             match law_section_bill_sections.entry(section_key) {
-                Entry::Vacant(e) => {
-                    e.insert(vec![String::from(&bill_section.section_number)]);
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![String::from(&bill_section.section_number)]);
                 }
-                Entry::Occupied(mut e) => {
-                    e.get_mut().push(String::from(&bill_section.section_number));
+                Entry::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .push(String::from(&bill_section.section_number));
                 }
             }
 
