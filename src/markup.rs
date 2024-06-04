@@ -92,19 +92,19 @@ fn mark_text(
     markup_regex: &MarkupRegex,
 ) -> String {
     // Section amends an existing law
-    let is_repealing = markup_regex.repealed.is_match(&*bill_section_text).unwrap();
-    let is_striking = markup_regex.striking.is_match(&*bill_section_text).unwrap();
+    let is_repealing = markup_regex.repealed.is_match(bill_section_text).unwrap();
+    let is_striking = markup_regex.striking.is_match(bill_section_text).unwrap();
     let is_inserting = markup_regex
         .inserting
         .is_match(&*bill_section_text)
         .unwrap();
-    let is_words = markup_regex.words.is_match(&*bill_section_text).unwrap();
-    let is_sections = markup_regex.sections.is_match(&*bill_section_text).unwrap();
+    let is_words = markup_regex.words.is_match(bill_section_text).unwrap();
+    let is_sections = markup_regex.sections.is_match(bill_section_text).unwrap();
     let is_subsections = markup_regex
         .subsections
         .is_match(&*bill_section_text)
         .unwrap();
-    let is_lines = markup_regex.lines.is_match(&*bill_section_text).unwrap();
+    let is_lines = markup_regex.lines.is_match(bill_section_text).unwrap();
     let mut marked_text = law_section_text.clone();
 
     // Repealing
