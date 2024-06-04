@@ -222,10 +222,11 @@ pub fn run_asciidoctor(output_folder: String, law_folder: &str) -> () {
     let paths = markup::get_adoc_paths(&format!("{output_folder}/{law_folder}")).unwrap();
 
     for path in paths {
-        let mut asciidoctor = Command::new("sh");
-        asciidoctor.arg("asciidoctor").arg(path.as_os_str());
-        let _ = asciidoctor.output().expect(
-            "Failed to parse file - is asciidoctor installed? (i.e. ~brew install asciidoctor)",
-        );
+        Command::new("asciidoctor")
+            .arg(path.as_os_str())
+            .output()
+            .expect(
+                "Failed to parse file - is asciidoctor installed? (i.e. ~brew install asciidoctor)",
+            );
     }
 }
