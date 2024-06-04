@@ -1,6 +1,6 @@
 mod bill_section;
 mod law_section;
-mod malegislature;
+mod ma_legislature;
 mod markup;
 
 use crate::{bill_section::BillSection, markup::MarkupRegex};
@@ -79,22 +79,22 @@ pub struct Cli {
 
 pub fn create_search_results_map(
     cli: &Cli,
-) -> (IndexMap<String, malegislature::SearchEntry>, String) {
+) -> (IndexMap<String, ma_legislature::SearchEntry>, String) {
     // Parse command line arguments and construct search URL
     info!("Constructing search URL");
-    let (do_search, search_url, search_term) = malegislature::get_search_page(&cli);
+    let (do_search, search_url, search_term) = ma_legislature::get_search_page(&cli);
 
     // Get and print the search results
     let mut search_results_map = IndexMap::new();
     if do_search || cli.list {
         info!("Value for search URL: {search_url}");
-        search_results_map = malegislature::get_and_print_search_results(&search_url);
+        search_results_map = ma_legislature::get_and_print_search_results(&search_url);
     }
     // Return search results and term
     (search_results_map, search_term)
 }
 
-pub fn create_bill(search_entry: &malegislature::SearchEntry) -> Vec<BillSection> {
+pub fn create_bill(search_entry: &ma_legislature::SearchEntry) -> Vec<BillSection> {
     let bill_url = &search_entry.bill_url;
     info!("Value for bill URL: {bill_url}");
     let text_nodes = bill_section::get_bill_text_nodes(bill_url);
