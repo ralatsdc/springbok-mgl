@@ -114,9 +114,9 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
     let mut required_law_sections: Vec<(String, String)> = Vec::new();
     let mut law_section_bill_sections: HashMap<String, Vec<String>> = HashMap::new();
     for bill_section in bill {
-        for section in &bill_section.law_sections.section_numbers {
+        for law_section in &bill_section.law_sections.section_numbers {
             let chapter = bill_section.law_sections.chapter_number.clone();
-            let section_key = law_section::get_section_key(&chapter, section);
+            let section_key = law_section::get_section_key(&chapter, law_section);
 
             match law_section_bill_sections.entry(section_key) {
                 Entry::Vacant(e) => {
@@ -129,7 +129,7 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
             // Push required law section to list
             // TODO: Review
-            required_law_sections.push((chapter, section.to_string()))
+            required_law_sections.push((chapter, law_section.to_string()))
         }
     }
     // Remove duplicates
