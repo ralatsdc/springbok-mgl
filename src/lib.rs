@@ -115,8 +115,8 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
     let mut law_section_bill_sections: HashMap<String, Vec<String>> = HashMap::new();
     for bill_section in bill {
         for law_section in &bill_section.law_sections.section_numbers {
-            let chapter = bill_section.law_sections.chapter_number.clone();
-            let section_key = law_section::get_section_key(&chapter, law_section);
+            let law_chapter = bill_section.law_sections.chapter_number.clone();
+            let section_key = law_section::get_section_key(&law_chapter, law_section);
 
             match law_section_bill_sections.entry(section_key) {
                 Entry::Vacant(e) => {
@@ -129,7 +129,7 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
             // Push required law section to list
             // TODO: Review
-            required_law_sections.push((chapter, law_section.to_string()))
+            required_law_sections.push((law_chapter, law_section.to_string()))
         }
     }
     // Remove duplicates
@@ -138,18 +138,21 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
     // Download required law sections concurrently
     let (tx, rx) = mpsc::channel();
-    let (chapter, section) = required_law_sections.pop().unwrap();
-    for (chapter, section) in required_law_sections {
-        law_section::download_law_section(&chapter, &section, tx.clone());
+    let (law_chapter, law_section) = required_law_sections.pop().unwrap();
+    for (law_chapter, law_section) in required_law_sections {
+        law_section::download_law_section(&law_chapter, &law_section, tx.clone());
     }
     // Download final law section
-    law_section::download_law_section(&chapter, &section, tx);
+    law_section::download_law_section(&law_chapter, &law_section, tx);
 
     // Collect law sections and create struct
     let mut law_sections_text: Vec<law_section::LawSectionWithText> = vec![];
-    for (chapter, section, text) in rx {
-        println!("Got law section: {:?} of chapter {:?}", section, chapter);
-        let law_chapter_key = law_section::get_section_key(&chapter, &section);
+    for (law_chapter, law_section, text) in rx {
+        println!(
+            "Got law section: {:?} of chapter {:?}",
+            law_section, law_chapter
+        );
+        let law_chapter_key = law_section::get_section_key(&law_chapter, &law_section);
         let bill_sections = law_section_bill_sections.get(&law_chapter_key);
         match bill_sections {
             Some(b) => {
