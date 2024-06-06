@@ -1,6 +1,7 @@
 use crate::{bill_section::BillSection, law_section::LawSectionWithText};
 use fancy_regex::Regex;
 use std::{error::Error, path::PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
 pub struct MarkupRegex {
@@ -24,6 +25,13 @@ pub struct MarkupRegex {
     insert_section: Regex,
     match_sections: Regex,
 }
+
+pub struct MarkedLawSection {
+    pub(crate) chapter_number: String,
+    pub(crate) section_number: String,
+    pub(crate) text: String,
+}
+
 // TODO: Document these?
 pub fn init_markup_regex() -> MarkupRegex {
     MarkupRegex {
@@ -55,7 +63,7 @@ pub(crate) fn mark_section_text(
     law_section: &LawSectionWithText,
     bill_sections: &Vec<BillSection>,
     markup_regex: &MarkupRegex,
-) -> Option<String> {
+) -> Option<MarkedLawSection> {
     // Parse law section title and contents
     if let Ok(Some(caps)) = markup_regex.text_parse.captures(law_section.text.as_ref()) {
         let title = String::from(caps[1].trim());
@@ -69,7 +77,6 @@ pub(crate) fn mark_section_text(
                 .iter()
                 .find(|bill_section| &bill_section.section_number == bill_section_key)
             {
-                // need to sort out law section vs bill section
                 marked_text = mark_text(
                     &marked_text,
                     &bill_section.text,
@@ -79,8 +86,16 @@ pub(crate) fn mark_section_text(
             }
         }
 
-        let marked_section_text = format!("*{title}*\n\n{marked_text}");
-        return Some(marked_section_text);
+        let mut key_split = law_section.law_chapter_key.split("-");
+        let law_chapter_number = key_split.next().unwrap();
+        let law_section_number = key_split.next().unwrap();
+        let marked_section_text = format!("=== {title}\n\n{marked_text}");
+        let marked_law_section = MarkedLawSection {
+            chapter_number: law_chapter_number.to_string(),
+            section_number: law_section_number.to_string(),
+            text: marked_section_text,
+        };
+        return Some(marked_law_section);
     }
     None
 }
@@ -299,12 +314,13 @@ fn mark_text(
 }
 
 pub(crate) fn get_adoc_paths(dir: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    let paths = std::fs::read_dir(dir)?
+    let paths = WalkDir::new(dir)
+        .into_iter()
         // Filter out all those directory entries which couldn't be read
         .filter_map(|res| res.ok())
         // Map the directory entries to paths
-        .map(|dir_entry| dir_entry.path())
-        // Filter out all paths with extensions other than `csv`
+        .map(|dir_entry| dir_entry.path().to_path_buf())
+        // Filter out all paths with extensions other than `adoc`
         .filter_map(|path| {
             if path.extension().map_or(false, |ext| ext == "adoc") {
                 Some(path)

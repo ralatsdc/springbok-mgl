@@ -3,7 +3,10 @@ mod law_section;
 mod ma_legislature;
 mod markup;
 
-use crate::{bill_section::BillSection, markup::MarkupRegex};
+use crate::{
+    bill_section::BillSection,
+    markup::{MarkedLawSection, MarkupRegex},
+};
 use clap::Parser;
 use fancy_regex::Regex;
 use indexmap::IndexMap;
@@ -179,19 +182,19 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
     law_sections_text
 }
-pub fn write_bill(bill: &Vec<BillSection>, output_filename: String, output_folder: &String) {
+pub fn write_bill(bill: &Vec<BillSection>, output_filename: &String, output_folder: &String) {
     // Print each text node of the bill to a file
     fs::create_dir_all(output_folder);
     let str_path = [output_folder, output_filename.as_str()].join("/");
     let path = Path::new(&str_path);
     let display = path.display();
     let mut file = match File::create(&path) {
-        Err(why) => panic!("Couldn't create {}: {}", display, why),
+        Err(error) => panic!("Couldn't create {}: {}", display, error),
         Ok(file) => file,
     };
     for bill_section in bill {
         match file.write(format!("{}\n", bill_section.text).as_bytes()) {
-            Err(why) => panic!("Couldn't write to {}: {}", display, why),
+            Err(error) => panic!("Couldn't write to {}: {}", display, error),
             Ok(_) => (),
         }
     }
@@ -201,25 +204,43 @@ pub fn write_asciidocs(
     bill_sections_text: &Vec<BillSection>,
     output_folder: &String,
     law_folder: &str,
-) -> std::io::Result<()> {
+) -> Result<(), std::io::Error> {
     let markup_regex = markup::init_markup_regex();
+    let mut all_markup: Vec<MarkedLawSection> = Vec::new();
     for law_section in law_sections_text {
         let file_name = &law_section.law_chapter_key;
-        if let Some(marked_text) =
+        if let Some(marked_law_section) =
             markup::mark_section_text(&law_section, bill_sections_text, &markup_regex)
         {
             fs::create_dir_all(format!("{output_folder}/{law_folder}"));
             let mut file = File::create(format!("{output_folder}/modified-laws/{file_name}.adoc"))?;
-            file.write_all(marked_text.as_ref())?;
+            file.write_all(marked_law_section.text.as_ref())?;
+            all_markup.push(marked_law_section);
         } else {
             println!("Could not mark up law section: {file_name}")
         }
     }
+
+    // Format strings add leading zeros to chapter/section numbers to ensure expected sort
+    all_markup.sort_unstable_by_key(|item| {
+        (
+            format!("{:0>5}", item.chapter_number.clone()),
+            format!("{:0>5}", item.section_number.clone()),
+        )
+    });
+    let mut file = File::create(format!("{output_folder}/{output_folder}.adoc"))?;
+    let current_chapter = "";
+    for value in all_markup {
+        if current_chapter != value.chapter_number {
+            file.write_all(format!("== Chapter {}\n\n", value.chapter_number).as_ref());
+        }
+        file.write_all(format!("{}\n\n", value.text).as_ref())?;
+    }
     Ok(())
 }
 
-pub fn run_asciidoctor(output_folder: String, law_folder: &str) -> () {
-    let paths = markup::get_adoc_paths(&format!("{output_folder}/{law_folder}")).unwrap();
+pub fn run_asciidoctor(output_folder: String) -> () {
+    let paths = markup::get_adoc_paths(&format!("{output_folder}")).unwrap();
 
     for path in paths {
         Command::new("asciidoctor")
