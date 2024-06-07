@@ -41,11 +41,11 @@ pub fn init_markup_regex() -> MarkupRegex {
         words: Regex::new(r"words?").unwrap(),
         sections: Regex::new(r"sections?:").unwrap(),
         subsections: Regex::new(r"(subsections?|subclauses?):").unwrap(),
-        lines: Regex::new(r"lines?").unwrap(),
+        lines: Regex::new(r"^.*SECTION.*lines?").unwrap(),
         repealed: Regex::new(r"repealed ?(.*)").unwrap(),
         replace_words: Regex::new(r#"strik.*(“|")(.*)(”|").*insert.*?:-? (.*)\."#).unwrap(),
         replace_lines: Regex::new(r#"strik.*lines (\d*)[^\d]*(\d*).*insert.*?:-?(.*)"#).unwrap(),
-        replace_section: Regex::new(r"strik?.*section.*insert.*?:-?(.*)").unwrap(),
+        replace_section: Regex::new(r"strik?.*section.*insert.*?:-?([\s\S]*)").unwrap(),
         replace_subsection: Regex::new(
             r"strik?.*(subsection|subclause) \((.)\).*insert.*?:-?([\s\S]*)",
         )
@@ -127,11 +127,18 @@ fn mark_text(
         if let Ok(Some(caps)) = markup_regex.repealed.captures(bill_section_text.as_ref()) {
             let repeal_specifications = String::from(&caps[1]);
 
-            marked_text = format!(
-                "\
-            [.line-through .red]#{law_section_text}#^{bill_section_number}^\n\nREPEALED {repeal_specifications}
+            // law_section_text may be empty if the repeal has already gone through
+            if law_section_text.is_empty() {
+                marked_text = format!("REPEALED {repeal_specifications}^{bill_section_number}^")
+            } else {
+                let formatted_law_section_text = format_multiline_tags(law_section_text);
+
+                marked_text = format!(
+                    "\
+            [.line-through .red]##{formatted_law_section_text}##^{bill_section_number}^\n\nREPEALED {repeal_specifications}
             "
-            )
+                )
+            }
         }
     }
     // Striking and Inserting
@@ -156,8 +163,8 @@ fn mark_text(
                     // Format replacement
                     let replacement = format!(
                         "\
-                    {buffer}[.line-through .red]#{striked_words}# \
-                    [.blue]#{inserted_words}#^{bill_section_number}^\
+                    {buffer}[.line-through .red]##{striked_words}## \
+                    [.blue]##{inserted_words}##^{bill_section_number}^\
                     "
                     );
 
@@ -186,8 +193,8 @@ fn mark_text(
             //     // Format replacement
             //     let replacement = format!(
             //         "\
-            //     [.line-through .red]#{striked_words}# \
-            //     [.blue]#{inserted_words}#^{bill_section_number}^\
+            //     [.line-through .red]##{striked_words}## \
+            //     [.blue]##{inserted_words}##^{bill_section_number}^\
             //     "
             //     );
             //
@@ -216,11 +223,12 @@ fn mark_text(
                     let subsection_header = String::from(caps[3].trim());
                     let subsection_content = String::from(caps[4].trim());
                     let subsection = format!("{} {}", subsection_header, subsection_content);
+                    let formatted_subsection = format_multiline_tags(&subsection);
 
                     // Format replacement
                     let mut replacement = format!(
                         "\
-                [.line-through .red]##{subsection}##\n\n[.blue]##{insert}##^{bill_section_number}^\
+                [.line-through .red]##{formatted_subsection}##\n\n[.blue]##{insert}##^{bill_section_number}^\
                 "
                     );
                     replacement = replacement.replace("\n", " +\n");
@@ -236,10 +244,11 @@ fn mark_text(
                 .captures(bill_section_text.as_ref())
             {
                 let insert = String::from(caps[1].trim());
+                let formatted_law_section_text = format_multiline_tags(law_section_text);
                 // Format replacement
                 marked_text = format!(
                     "\
-                [.line-through .red]#{law_section_text}#\n\n[.blue]#{insert}#^{bill_section_number}^\
+                [.line-through .red]##{formatted_law_section_text}##\n\n[.blue]##{insert}##^{bill_section_number}^\
                 "
                 )
             }
@@ -257,7 +266,7 @@ fn mark_text(
                 // Format replacement
                 let replacement = format!(
                     "\
-                    [.line-through .red]#{striked_words}#^{bill_section_number}^ \
+                    [.line-through .red]##{striked_words}##^{bill_section_number}^ \
                     "
                 );
 
@@ -298,11 +307,12 @@ fn mark_text(
                     .find_iter(&section_text)
                     .map(|m| m.expect("BAD REGEX").as_str().trim())
                     .collect();
-                let insert = matches.join("#\n\n[.blue]#");
+                let sep = format!("##^{bill_section_number}^\n\n[.blue]##");
+                let insert = matches.join(sep.as_ref());
                 // Format replacement
                 marked_text = format!(
                     "\
-                        {law_section_text}\n\n[.blue]#{insert}#^{bill_section_number}^\
+                        {law_section_text}\n\n[.blue]##{insert}##^{bill_section_number}^\
                         "
                 )
             }
@@ -330,4 +340,11 @@ pub(crate) fn get_adoc_paths(dir: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> 
         })
         .collect::<Vec<_>>();
     Ok(paths)
+}
+
+pub fn format_multiline_tags(s: &String) -> String {
+    // Apply tags to each paragraph and trim spaces where needed
+    let formatted_string = s.replace("\n\n", "##\n\n[.line-through .red]##");
+
+    formatted_string
 }
