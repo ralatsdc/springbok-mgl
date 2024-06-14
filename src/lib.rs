@@ -1,9 +1,12 @@
 mod bill_section;
 mod law_section;
-mod malegislature;
+mod ma_legislature;
 mod markup;
 
-use crate::{bill_section::BillSection, markup::MarkupRegex};
+use crate::{
+    bill_section::BillSection,
+    markup::{MarkedLawSection, MarkupRegex},
+};
 use clap::Parser;
 use fancy_regex::Regex;
 use indexmap::IndexMap;
@@ -79,22 +82,22 @@ pub struct Cli {
 
 pub fn create_search_results_map(
     cli: &Cli,
-) -> (IndexMap<String, malegislature::SearchEntry>, String) {
+) -> (IndexMap<String, ma_legislature::SearchEntry>, String) {
     // Parse command line arguments and construct search URL
     info!("Constructing search URL");
-    let (do_search, search_url, search_term) = malegislature::get_search_page(&cli);
+    let (do_search, search_url, search_term) = ma_legislature::get_search_page(&cli);
 
     // Get and print the search results
     let mut search_results_map = IndexMap::new();
     if do_search || cli.list {
         info!("Value for search URL: {search_url}");
-        search_results_map = malegislature::get_and_print_search_results(&search_url);
+        search_results_map = ma_legislature::get_and_print_search_results(&search_url);
     }
     // Return search results and term
     (search_results_map, search_term)
 }
 
-pub fn create_bill(search_entry: &malegislature::SearchEntry) -> Vec<BillSection> {
+pub fn create_bill(search_entry: &ma_legislature::SearchEntry) -> Vec<BillSection> {
     let bill_url = &search_entry.bill_url;
     info!("Value for bill URL: {bill_url}");
     let text_nodes = bill_section::get_bill_text_nodes(bill_url);
@@ -114,22 +117,24 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
     let mut required_law_sections: Vec<(String, String)> = Vec::new();
     let mut law_section_bill_sections: HashMap<String, Vec<String>> = HashMap::new();
     for bill_section in bill {
-        for section in &bill_section.law_sections.section_numbers {
-            let chapter = bill_section.law_sections.chapter_number.clone();
-            let section_key = law_section::get_section_key(&chapter, section);
+        for law_section in &bill_section.law_sections.section_numbers {
+            let law_chapter = bill_section.law_sections.chapter_number.clone();
+            let section_key = law_section::get_section_key(&law_chapter, law_section);
 
             match law_section_bill_sections.entry(section_key) {
-                Entry::Vacant(e) => {
-                    e.insert(vec![String::from(&bill_section.section_number)]);
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![String::from(&bill_section.section_number)]);
                 }
-                Entry::Occupied(mut e) => {
-                    e.get_mut().push(String::from(&bill_section.section_number));
+                Entry::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .push(String::from(&bill_section.section_number));
                 }
             }
 
             // Push required law section to list
             // TODO: Review
-            required_law_sections.push((chapter, section.to_string()))
+            required_law_sections.push((law_chapter, law_section.to_string()))
         }
     }
     // Remove duplicates
@@ -138,18 +143,21 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
     // Download required law sections concurrently
     let (tx, rx) = mpsc::channel();
-    let (chapter, section) = required_law_sections.pop().unwrap();
-    for (chapter, section) in required_law_sections {
-        law_section::download_law_section(&chapter, &section, tx.clone());
+    let (law_chapter, law_section) = required_law_sections.pop().unwrap();
+    for (law_chapter, law_section) in required_law_sections {
+        law_section::download_law_section(&law_chapter, &law_section, tx.clone());
     }
     // Download final law section
-    law_section::download_law_section(&chapter, &section, tx);
+    law_section::download_law_section(&law_chapter, &law_section, tx);
 
     // Collect law sections and create struct
     let mut law_sections_text: Vec<law_section::LawSectionWithText> = vec![];
-    for (chapter, section, text) in rx {
-        println!("Got law section: {:?} of chapter {:?}", section, chapter);
-        let law_chapter_key = law_section::get_section_key(&chapter, &section);
+    for (law_chapter, law_section, text) in rx {
+        println!(
+            "Got law section: {:?} of chapter {:?}",
+            law_section, law_chapter
+        );
+        let law_chapter_key = law_section::get_section_key(&law_chapter, &law_section);
         let bill_sections = law_section_bill_sections.get(&law_chapter_key);
         match bill_sections {
             Some(b) => {
@@ -174,19 +182,19 @@ pub fn create_law_sections_text(bill: &Vec<BillSection>) -> Vec<law_section::Law
 
     law_sections_text
 }
-pub fn write_bill(bill: &Vec<BillSection>, output_filename: String, output_folder: &String) {
+pub fn write_bill(bill: &Vec<BillSection>, output_filename: &String, output_folder: &String) {
     // Print each text node of the bill to a file
     fs::create_dir_all(output_folder);
     let str_path = [output_folder, output_filename.as_str()].join("/");
     let path = Path::new(&str_path);
     let display = path.display();
     let mut file = match File::create(&path) {
-        Err(why) => panic!("Couldn't create {}: {}", display, why),
+        Err(error) => panic!("Couldn't create {}: {}", display, error),
         Ok(file) => file,
     };
     for bill_section in bill {
         match file.write(format!("{}\n", bill_section.text).as_bytes()) {
-            Err(why) => panic!("Couldn't write to {}: {}", display, why),
+            Err(error) => panic!("Couldn't write to {}: {}", display, error),
             Ok(_) => (),
         }
     }
@@ -196,31 +204,50 @@ pub fn write_asciidocs(
     bill_sections_text: &Vec<BillSection>,
     output_folder: &String,
     law_folder: &str,
-) -> std::io::Result<()> {
+) -> Result<(), std::io::Error> {
     let markup_regex = markup::init_markup_regex();
+    let mut all_markup: Vec<MarkedLawSection> = Vec::new();
     for law_section in law_sections_text {
         let file_name = &law_section.law_chapter_key;
-        if let Some(marked_text) =
+        if let Some(marked_law_section) =
             markup::mark_section_text(&law_section, bill_sections_text, &markup_regex)
         {
             fs::create_dir_all(format!("{output_folder}/{law_folder}"));
             let mut file = File::create(format!("{output_folder}/modified-laws/{file_name}.adoc"))?;
-            file.write_all(marked_text.as_ref())?;
+            file.write_all(marked_law_section.text.as_ref())?;
+            all_markup.push(marked_law_section);
         } else {
             println!("Could not mark up law section: {file_name}")
         }
     }
+
+    // Format strings add leading zeros to chapter/section numbers to ensure expected sort
+    all_markup.sort_unstable_by_key(|item| {
+        (
+            format!("{:0>5}", item.chapter_number.clone()),
+            format!("{:0>5}", item.section_number.clone()),
+        )
+    });
+    let mut file = File::create(format!("{output_folder}/{output_folder}.adoc"))?;
+    let current_chapter = "";
+    for value in all_markup {
+        if current_chapter != value.chapter_number {
+            file.write_all(format!("== Chapter {}\n\n", value.chapter_number).as_ref());
+        }
+        file.write_all(format!("{}\n\n", value.text).as_ref())?;
+    }
     Ok(())
 }
 
-pub fn run_asciidoctor(output_folder: String, law_folder: &str) -> () {
-    let paths = markup::get_adoc_paths(&format!("{output_folder}/{law_folder}")).unwrap();
+pub fn run_asciidoctor(output_folder: String) -> () {
+    let paths = markup::get_adoc_paths(&format!("{output_folder}")).unwrap();
 
     for path in paths {
-        let mut asciidoctor = Command::new("sh");
-        asciidoctor.arg("asciidoctor").arg(path.as_os_str());
-        let _ = asciidoctor.output().expect(
-            "Failed to parse file - is asciidoctor installed? (i.e. ~brew install asciidoctor)",
-        );
+        Command::new("asciidoctor")
+            .arg(path.as_os_str())
+            .output()
+            .expect(
+                "Failed to parse file - is asciidoctor installed? (i.e. ~brew install asciidoctor)",
+            );
     }
 }
